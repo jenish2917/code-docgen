@@ -16,9 +16,17 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from core.views import UploadCodeView
+from core.views import (
+    UploadCodeView,
+    UploadProjectView,
+    GenerateDocsView,
+    ExportDocsView
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/upload/', UploadCodeView.as_view()),
+    path('api/upload-project/', UploadProjectView.as_view()),
+    path('api/generate-docs/', GenerateDocsView.as_view()),
+    path('api/export-docs/', ExportDocsView.as_view()),
 ]
