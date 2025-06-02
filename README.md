@@ -30,6 +30,7 @@ code-docgen/
 ├── media/                  # Uploaded code files
 ├── docs_output/            # Generated documentation
 ├── env/                    # Python virtual environment (excluded from Git)
+├── requirements.txt        # Python dependencies
 └── README.md               # You're reading this!
 ```
 
@@ -44,6 +45,9 @@ cd code-docgen
 # Activate virtual environment (Windows)
 .\env\Scripts\activate
 
+# Apply database migrations
+python manage.py migrate
+
 # Run server
 python manage.py runserver
 ```
@@ -54,7 +58,10 @@ python manage.py runserver
 # Create virtual environment
 python -m venv env
 
-# Install dependencies
+# Install dependencies using requirements.txt
+pip install -r requirements.txt
+
+# Or install dependencies individually
 pip install django djangorestframework django-cors-headers openai python-magic
 ```
 
