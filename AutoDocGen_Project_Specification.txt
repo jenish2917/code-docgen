@@ -1,0 +1,189 @@
+# AutoDocGen - Automated Code Documentation Generator
+
+## 1. Project Overview
+
+AutoDocGen is a web application that takes a user-uploaded code file or entire folder and automatically generates comprehensive documentation for it. It leverages large language models (LLMs) like DeepSeek AI (or free alternatives like OpenAI's GPT models if available) to understand the code semantics and produce natural language documentation.
+
+## 2. Requirements & Features
+
+### Functional Requirements
+
+- Upload code files or folders (support popular languages like Python, JavaScript, Java, etc.)
+- Parse the codebase to extract code structure: classes, functions, methods, variables, comments, and dependencies
+- Use LLM to generate natural language documentation for each code component
+- Display generated documentation in a clean, navigable frontend
+- Allow download/export of the generated docs (Markdown, HTML, PDF)
+- User authentication (optional) to save sessions and docs
+- Support multiple programming languages (start simple, e.g., Python + JavaScript)
+
+### Non-functional Requirements
+
+- Responsive UI (React + Vite)
+- Secure backend API (Django REST Framework)
+- Scalable to handle large codebases
+- Extensible to add more languages or models
+- Low latency for doc generation (as much as possible)
+
+## 3. System Architecture Overview
+
+```
+User (Browser)
+    |
+Frontend (React + Vite)
+    |  (REST API)
+Backend (Django + DRF)
+    |  (File parsing, LLM API calls)
+LLM Model (DeepSeek or GPT-like)
+    |
+Documentation generation
+```
+
+## 4. Component Breakdown
+
+### 4.1 Frontend (React + Vite)
+
+- FileUploader: UI to select/upload files or folders (drag & drop)
+- CodeExplorer: Display uploaded files & structure
+- DocViewer: Show generated documentation with collapsible sections
+- ExportButton: Download docs in multiple formats
+- Auth Components (optional): Login/Register, Session management
+- Status/Progress Bar: Show progress during doc generation
+
+### 4.2 Backend (Django + DRF)
+
+- File Storage API: Save uploaded code files temporarily
+- Code Parser Module: Analyze code to extract structure
+  - Use libraries like:
+    - Python: ast module, jedi
+    - JavaScript: esprima, acorn
+    - Java: javaparser
+- Doc Generator API: Endpoint to send parsed code info to LLM and get back documentation
+- Session/User Management (optional)
+- Export Service: Generate downloadable doc files (Markdown/HTML/PDF)
+
+### 4.3 LLM Integration
+
+- Model Selection:
+  - DeepSeek AI if accessible via API
+  - Alternatively, OpenAI GPT-3.5 or GPT-4 (free tier or trial, mindful of usage limits)
+  - Open-source alternatives:
+    - GPT4All
+    - LLaMA (locally hosted but resource-intensive)
+    - Huggingface models (e.g., CodeBERT, CodeT5) fine-tuned for code summarization
+- Prompt Design: Carefully crafted prompts to generate descriptive documentation from code snippets or extracted metadata.
+- Rate Limiting / Queue Management to handle API limits and concurrency
+
+## 5. Detailed Documentation Structure to Generate
+
+Your app will generate docs with the following hierarchy (example for Python):
+
+```
+Project Name / File Name
+├── Overview
+│   └── Short description of the file/project
+├── Classes
+│   ├── ClassName1
+│   │   ├── Description
+│   │   ├── Attributes
+│   │   ├── Methods
+│   │   │   ├── Method1
+│   │   │   │   ├── Description
+│   │   │   │   ├── Parameters
+│   │   │   │   └── Returns
+│   │   │   └── Method2
+│   │   └── Examples (optional)
+│   └── ClassName2
+├── Functions
+│   ├── function1
+│   │   ├── Description
+│   │   ├── Parameters
+│   │   └── Returns
+│   └── function2
+├── Variables / Constants
+│   └── Description
+├── Dependencies / Imports
+├── Usage Examples
+├── TODO / Known Issues (if any)
+```
+
+You can generate this as:
+- Interactive HTML (frontend viewer)
+- Markdown file (README.md style)
+- PDF export (using weasyprint or reportlab in Django)
+
+## 6. Implementation Details
+
+### 6.1 Frontend Details
+
+- Use React Dropzone or native file input for uploads
+- Parse folder structure in frontend or send as zip and extract backend
+- Show a loading spinner while docs are generated
+- Display docs in a structured tree view using libraries like react-json-view or custom components
+- Use Vite for fast dev server & build
+
+### 6.2 Backend Details
+
+- Endpoint POST /upload to receive files (multi-part or zip)
+- Save files to temp dir (using Django's FileSystemStorage)
+- Endpoint POST /generate-docs to trigger parsing and doc generation
+- Parsing:
+  - For Python: use built-in ast to extract functions/classes and docstrings
+  - For JS: use a parser like esprima (node subprocess or JS library)
+- Construct input prompts for the LLM based on extracted code pieces
+- Call LLM API asynchronously
+- Aggregate returned text into structured JSON docs
+- Return JSON to frontend
+
+### 6.3 LLM API Integration
+
+- Wrap calls to DeepSeek or OpenAI or other models into a service layer in Django
+- Design prompt examples like:
+
+```python
+"""
+You are an expert software developer and technical writer.
+
+Explain the following Python function in simple terms:
+
+def add_numbers(a, b):
+    return a + b
+
+Explanation:
+"""
+```
+
+- Use OpenAI's chat.completions or DeepSeek's equivalent to get the explanation
+- Handle errors, retries, and caching
+
+## 7. Tech Stack Summary
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React + Vite |
+| Backend | Django + Django REST Framework |
+| Code Parsing | Python ast, Node parsers |
+| LLM Integration | DeepSeek AI or OpenAI GPT |
+| File Storage | Django file storage |
+| Documentation | JSON output + React UI + Export |
+
+## 8. Optional Enhancements
+
+- Multi-language support with pluggable parsers
+- Code syntax highlighting in docs (using Prism.js or Highlight.js)
+- Incremental doc generation (per file or function)
+- User management and saved projects
+- WebSocket for real-time doc generation feedback
+- CLI tool counterpart for local use
+
+## 9. Roadmap / Milestones
+
+| Milestone | Description | Estimated Time |
+|-----------|-------------|----------------|
+| Setup project skeleton | React + Vite + Django setup | 1-2 days |
+| File upload & storage | Upload and save code files | 2 days |
+| Basic code parsing | Extract functions/classes (Python only) | 3 days |
+| LLM integration | Connect to DeepSeek/OpenAI & test | 2-3 days |
+| Generate & display docs | Show generated docs in React | 3 days |
+| Export docs | Markdown/HTML/PDF export | 2 days |
+| Add multi-language support | Add JS or other parsers | 4-5 days |
+| UI polish & auth | Improve UI, add authentication | 3 days |
