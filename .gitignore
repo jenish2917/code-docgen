@@ -1,0 +1,17 @@
+# Python
+env/
+*.pyc
+__pycache__/
+
+# Django
+db.sqlite3
+/media/
+*.log
+
+# Node
+node_modules/
+dist/
+.env
+
+# Vite
+.vite
