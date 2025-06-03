@@ -1,11 +1,12 @@
-# 🧠 CodeDocGen – Auto Code Documentation Generator
+# 🧠 CodeDocGen – AI-Powered Code Documentation Generator
 
-CodeDocGen is a full-stack web application that allows users to upload source code files and automatically generates documentation from them. It uses **Django** as the backend for file handling and parsing, and **React + Vite** as the frontend for user interaction.
+CodeDocGen is a full-stack web application that allows users to upload source code files and automatically generates comprehensive documentation from them. It uses **Django** as the backend for file handling and parsing, **React + Vite** as the frontend for user interaction, and integrates with **DeepSeek AI** for producing high-quality documentation.
 
 ## 🔧 Tech Stack
 
 - **Backend**: Django, Django REST Framework, django-cors-headers
-- **Frontend**: React + Vite
+- **Frontend**: React + Vite, ReactMarkdown, Prism.js
+- **AI Integration**: DeepSeek AI via OpenRouter API
 - **Other Tools**: Python `ast`, axios, PowerShell scripts
 
 ## 📁 Project Structure

@@ -16,38 +16,69 @@ class UploadCodeView(APIView):
     API endpoint for uploading single code files and generating documentation.
     """
     parser_classes = [MultiPartParser, FormParser]
-
+    
     def post(self, request):
+        print("UploadCodeView received request:", request)
+        print("Request FILES:", request.FILES)
+        print("Request data:", request.data)
+        
         if 'file' not in request.FILES:
+            print("No file in request.FILES")
             return Response({'status': 'error', 'message': 'No file provided'}, status=400)
             
         uploaded_file = request.FILES['file']
+        print(f"File received: {uploaded_file.name}, size: {uploaded_file.size} bytes")
         
         # Create directories if they don't exist
         os.makedirs('media', exist_ok=True)
         os.makedirs('docs_output', exist_ok=True)
         
         save_path = f'media/{uploaded_file.name}'
-        
-        # Save the uploaded file
-        with open(save_path, 'wb+') as f:
-            for chunk in uploaded_file.chunks():
-                f.write(chunk)
-                
-        # Check if it's Python file for now (will be expanded to support more languages)
-        if save_path.endswith('.py'):
-            doc = parse_codebase(save_path)
-            doc_path = f'docs_output/{uploaded_file.name}_doc.md'
+          # Save the uploaded file
+        try:
+            with open(save_path, 'wb+') as f:
+                for chunk in uploaded_file.chunks():
+                    f.write(chunk)
             
-            with open(doc_path, 'w') as f:
-                f.write(doc)
-                
+            print(f"File saved successfully at {save_path}")
+                    
+            # Check if it's Python file for now (will be expanded to support more languages)
+            if save_path.endswith('.py'):
+                try:
+                    print(f"Starting to parse file: {save_path}")
+                    doc_content, generator = parse_codebase(save_path)
+                    print(f"Successfully parsed file. Generator: {generator}")
+                    
+                    doc_path = f'docs_output/{uploaded_file.name}_doc.md'
+                    
+                    with open(doc_path, 'w', encoding='utf-8') as f:
+                        f.write(doc_content)
+                        
+                    print(f"Documentation saved to {doc_path}")
+                    
+                    return Response({
+                        'status': 'success', 
+                        'doc': doc_content,
+                        'doc_path': doc_path,
+                        'file_name': uploaded_file.name,
+                        'generator': generator
+                    })
+                except Exception as e:
+                    print(f"Error during code parsing: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    return Response({
+                        'status': 'error',
+                        'message': f'Error generating documentation: {str(e)}'
+                    }, status=500)
+        except Exception as e:
+            print(f"Error saving file: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             return Response({
-                'status': 'success', 
-                'doc': doc,
-                'doc_path': doc_path,
-                'file_name': uploaded_file.name
-            })
+                'status': 'error',
+                'message': f'Error saving uploaded file: {str(e)}'
+            }, status=500)
         else:
             return Response({
                 'status': 'error',
@@ -146,10 +177,9 @@ class UploadProjectView(APIView):
                     rel_path = os.path.relpath(file_path, project_dir)
                     doc_file = f"{os.path.splitext(rel_path)[0].replace('/', '_')}_doc.md"
                     doc_path = os.path.join(docs_dir, doc_file)
-                    
-                    # Generate documentation for this file
+                              # Generate documentation for this file
                     try:
-                        doc_content = parse_codebase(file_path)
+                        doc_content, generator = parse_codebase(file_path)
                         
                         # Save documentation
                         with open(doc_path, 'w') as f:
@@ -157,7 +187,8 @@ class UploadProjectView(APIView):
                             
                         docs.append({
                             'file_path': file_path,
-                            'doc_path': doc_path
+                            'doc_path': doc_path,
+                            'generator': generator
                         })
                     except Exception as e:
                         # Log error but continue processing other files
@@ -180,20 +211,20 @@ class GenerateDocsView(APIView):
         # Ensure the file exists and is in the media directory
         if not os.path.exists(file_path) or not file_path.startswith('media/'):
             return Response({'status': 'error', 'message': 'Invalid file path'}, status=400)
-            
-        # Generate documentation
+              # Generate documentation
         try:
-            doc = parse_codebase(file_path)
+            doc_content, generator = parse_codebase(file_path)
             doc_path = f'docs_output/{os.path.basename(file_path)}_doc.md'
             
             with open(doc_path, 'w') as f:
-                f.write(doc)
+                f.write(doc_content)
                 
             return Response({
                 'status': 'success',
-                'doc': doc,
+                'doc': doc_content,
                 'doc_path': doc_path,
-                'file_name': os.path.basename(file_path)
+                'file_name': os.path.basename(file_path),
+                'generator': generator
             })
         except Exception as e:
             return Response({'status': 'error', 'message': f'Error generating documentation: {str(e)}'}, status=500)
@@ -278,3 +309,19 @@ class ExportDocsView(APIView):
         html = '<p>' + '</p><p>'.join('\n'.join(result).split('\n\n')) + '</p>'
         
         return html
+
+class AIStatusView(APIView):
+    """
+    API endpoint to check the status of AI integration.
+    """
+    def get(self, request):
+        # Import here to avoid circular imports
+        from .utils.llm_integration import DEEPSEEK_API_KEY
+        
+        status = {
+            "ai_integration": "enabled" if DEEPSEEK_API_KEY and len(DEEPSEEK_API_KEY) > 10 else "disabled",
+            "provider": "DeepSeek AI via OpenRouter API",
+            "model": "deepseek/deepseek-r1-0528"
+        }
+        
+        return Response(status)

@@ -1,30 +1,44 @@
 import ast
 import os
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Tuple
+from .llm_integration import generate_documentation_with_deepseek, generate_documentation_with_retry
 
-def parse_codebase(filepath: str) -> str:
+def parse_codebase(filepath: str) -> Tuple[str, str]:
     """
-    Parse a Python code file and generate documentation using AST and optionally LLM.
+    Parse a Python code file and generate documentation using DeepSeek AI.
+    Falls back to AST parsing if the LLM integration fails.
     
     Args:
         filepath: Path to the code file
         
     Returns:
-        str: Markdown formatted documentation
+        Tuple[str, str]: Generated documentation in markdown format and the generator name ('deepseek' or 'ast')
     """
-    # Basic structure to collect code metadata
-    code_structure = {
-        "filename": os.path.basename(filepath),
-        "classes": [],
-        "functions": [],
-        "imports": []
-    }
-    
-    # Parse the file with AST
     try:
+        # Read the content of the file
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
-            tree = ast.parse(content)
+        
+        # First attempt to generate documentation using DeepSeek AI with retry logic
+        llm_doc, generator = generate_documentation_with_retry(content, os.path.basename(filepath))
+        
+        # If LLM generation is successful, return it
+        if llm_doc:
+            return llm_doc, "deepseek"
+            
+        # If LLM fails, fall back to AST parsing
+        print("LLM documentation generation failed, falling back to AST parsing...")
+        
+        # Basic structure to collect code metadata
+        code_structure = {
+            "filename": os.path.basename(filepath),
+            "classes": [],
+            "functions": [],
+            "imports": []
+        }
+        
+        # Parse the file with AST
+        tree = ast.parse(content)
         
         # Extract top-level classes, functions and imports
         for node in ast.iter_child_nodes(tree):
@@ -42,7 +56,8 @@ def parse_codebase(filepath: str) -> str:
         return _generate_markdown_doc(code_structure, content)
         
     except Exception as e:
-        return f"# Error in Documentation Generation\n\nAn error occurred while parsing the file: {str(e)}"
+        error_doc = f"# Error in Documentation Generation\n\nAn error occurred while parsing the file: {str(e)}"
+        return error_doc, "error"
 
 def _extract_class_info(node: ast.ClassDef) -> Dict[str, Any]:
     """Extract information from a class definition"""
@@ -105,7 +120,7 @@ def _extract_import_info(node: Union[ast.Import, ast.ImportFrom]) -> List[Dict[s
     
     return imports
 
-def _generate_markdown_doc(code_structure: Dict[str, Any], original_content: str) -> str:
+def _generate_markdown_doc(code_structure: Dict[str, Any], original_content: str) -> Tuple[str, str]:
     """Generate markdown documentation from parsed code structure"""
     filename = code_structure["filename"]
     doc = f"# Documentation for `{filename}`\n\n"
@@ -175,7 +190,7 @@ def _generate_markdown_doc(code_structure: Dict[str, Any], original_content: str
             if func["returns"]:
                 doc += f"Returns: `{func['returns']}`\n\n"
     
-    return doc
+    return doc, "ast"
 
 def _get_file_overview(content: str, filename: str) -> str:
     """

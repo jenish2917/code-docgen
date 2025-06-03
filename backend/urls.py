@@ -20,7 +20,8 @@ from core.views import (
     UploadCodeView,
     UploadProjectView,
     GenerateDocsView,
-    ExportDocsView
+    ExportDocsView,
+    AIStatusView
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -31,6 +32,7 @@ urlpatterns = [
     path('api/upload-project/', UploadProjectView.as_view()),
     path('api/generate-docs/', GenerateDocsView.as_view()),
     path('api/export-docs/', ExportDocsView.as_view()),
+    path('api/ai-status/', AIStatusView.as_view()),
 ]
 
 if settings.DEBUG:
