@@ -1,7 +1,6 @@
 import ast
 import os
-import openai
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union
 
 def parse_codebase(filepath: str) -> str:
     """
@@ -92,7 +91,7 @@ def _extract_function_info(node: ast.FunctionDef) -> Dict[str, Any]:
     
     return function_info
 
-def _extract_import_info(node: ast.Import or ast.ImportFrom) -> List[Dict[str, str]]:
+def _extract_import_info(node: Union[ast.Import, ast.ImportFrom]) -> List[Dict[str, str]]:
     """Extract information from import statements"""
     imports = []
     
@@ -180,57 +179,14 @@ def _generate_markdown_doc(code_structure: Dict[str, Any], original_content: str
 
 def _get_file_overview(content: str, filename: str) -> str:
     """
-    Generate a file overview, potentially using LLM if available.
-    Falls back to basic extraction if LLM is not configured.
+    Generate a file overview from the module docstring.
+    For enhanced overview, you can integrate OpenAI later.
     """
     try:
-        # Try to use OpenAI if API key is set
-        if os.environ.get("OPENAI_API_KEY"):
-            return _generate_overview_with_llm(content, filename)
-        else:
-            # Fallback to basic extraction (first module docstring)
-            tree = ast.parse(content)
-            module_docstring = ast.get_docstring(tree)
-            if module_docstring:
-                return module_docstring
-            return "No overview available. Add a module-level docstring or configure OpenAI integration."
-    except Exception as e:
-        return f"Overview generation failed: {str(e)}"
-
-def _generate_overview_with_llm(content: str, filename: str) -> str:
-    """Generate a file overview using OpenAI"""
-    try:
-        client = openai.OpenAI()
-        
-        # Create a prompt for the LLM
-        prompt = f"""
-        You are a code documentation expert. Please provide a concise overview 
-        of the following Python file named '{filename}'. Focus on:
-        
-        1. The main purpose of the file
-        2. Key functionality it provides
-        3. How it might integrate with other code
-        
-        Be brief but informative (3-5 sentences max).
-        
-        Here is the code:
-        
-        {content[:4000] if len(content) > 4000 else content}
-        """
-        
-        # If content is too long, add a note
-        if len(content) > 4000:
-            prompt += "\n[Note: Code was truncated due to length.]"
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a code documentation assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=300
-        )
-        
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"LLM-powered overview generation failed: {str(e)}. Configure the OpenAI API key or add module docstrings."
+        tree = ast.parse(content)
+        module_docstring = ast.get_docstring(tree)
+        if module_docstring:
+            return module_docstring
+        return f"This file `{filename}` contains Python code. No module-level docstring was found."
+    except:
+        return "Unable to generate overview."

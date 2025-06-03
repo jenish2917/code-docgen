@@ -164,8 +164,7 @@ class UploadProjectView(APIView):
                         print(f"Error processing {file_path}: {str(e)}")
                         
         return docs
-
-
+    
 class GenerateDocsView(APIView):
     """
     API endpoint for generating documentation for already uploaded files.
@@ -193,7 +192,8 @@ class GenerateDocsView(APIView):
             return Response({
                 'status': 'success',
                 'doc': doc,
-                'doc_path': doc_path
+                'doc_path': doc_path,
+                'file_name': os.path.basename(file_path)
             })
         except Exception as e:
             return Response({'status': 'error', 'message': f'Error generating documentation: {str(e)}'}, status=500)
@@ -220,7 +220,7 @@ class ExportDocsView(APIView):
                 return Response({'status': 'success', 'content': content, 'format': 'markdown'})
                 
             elif export_format == 'html':
-                # Simple HTML conversion
+                # Simple HTML conversion (you could use a proper markdown library for this)
                 html_content = f"""
                 <!DOCTYPE html>
                 <html>
