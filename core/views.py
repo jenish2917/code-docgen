@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from django.http import Http404
 import os
@@ -8,14 +9,17 @@ import zipfile
 import tempfile
 import shutil
 import json
+import traceback
 from typing import Dict, List, Any
 from .utils.code_parser import parse_codebase
+from .utils.llm_integration import generate_documentation_with_retry
 
 class UploadCodeView(APIView):
     """
     API endpoint for uploading single code files and generating documentation.
     """
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         print("UploadCodeView received request:", request)
@@ -28,13 +32,12 @@ class UploadCodeView(APIView):
             
         uploaded_file = request.FILES['file']
         print(f"File received: {uploaded_file.name}, size: {uploaded_file.size} bytes")
-        
-        # Create directories if they don't exist
+          # Create directories if they don't exist
         os.makedirs('media', exist_ok=True)
         os.makedirs('docs_output', exist_ok=True)
         
         save_path = f'media/{uploaded_file.name}'
-          # Save the uploaded file
+        # Save the uploaded file
         try:
             with open(save_path, 'wb+') as f:
                 for chunk in uploaded_file.chunks():
@@ -48,6 +51,11 @@ class UploadCodeView(APIView):
                     print(f"Starting to parse file: {save_path}")
                     doc_content, generator = parse_codebase(save_path)
                     print(f"Successfully parsed file. Generator: {generator}")
+                    
+                    # Make sure we always return a valid generator type
+                    if generator not in ['deepseek', 'ast', 'error']:
+                        print(f"Warning: Unknown generator type '{generator}', defaulting to 'ast'")
+                        generator = 'ast'
                     
                     doc_path = f'docs_output/{uploaded_file.name}_doc.md'
                     
@@ -66,11 +74,19 @@ class UploadCodeView(APIView):
                 except Exception as e:
                     print(f"Error during code parsing: {str(e)}")
                     import traceback
-                    print(traceback.format_exc())
+                    traceback_str = traceback.format_exc()
+                    print(traceback_str)
+                    
+                    # Create an error document
+                    error_doc = f"# Error in Documentation Generation\n\nAn error occurred while parsing the file: {str(e)}\n\n"
+                      # Return a more informative error response with the error doc
                     return Response({
-                        'status': 'error',
-                        'message': f'Error generating documentation: {str(e)}'
-                    }, status=500)
+                        'status': 'partial_success',
+                        'doc': error_doc,
+                        'file_name': uploaded_file.name,
+                        'generator': 'error',
+                        'error_message': f'Error generating documentation: {str(e)}'
+                    })
         except Exception as e:
             print(f"Error saving file: {str(e)}")
             import traceback
@@ -91,6 +107,7 @@ class UploadProjectView(APIView):
     API endpoint for uploading project folders (as zip files) and generating documentation.
     """
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         if 'file' not in request.FILES:
@@ -153,7 +170,6 @@ class UploadProjectView(APIView):
             if os.path.exists(docs_dir):
                 shutil.rmtree(docs_dir)
             return Response({'status': 'error', 'message': f'Error processing project: {str(e)}'}, status=500)
-            
     def _process_project(self, project_dir: str, docs_dir: str) -> List[Dict[str, str]]:
         """
         Process all Python files in the project directory.
@@ -177,7 +193,8 @@ class UploadProjectView(APIView):
                     rel_path = os.path.relpath(file_path, project_dir)
                     doc_file = f"{os.path.splitext(rel_path)[0].replace('/', '_')}_doc.md"
                     doc_path = os.path.join(docs_dir, doc_file)
-                              # Generate documentation for this file
+                    
+                    # Generate documentation for this file
                     try:
                         doc_content, generator = parse_codebase(file_path)
                         
@@ -201,6 +218,7 @@ class GenerateDocsView(APIView):
     API endpoint for generating documentation for already uploaded files.
     Useful when changing documentation options without re-uploading files.
     """
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         file_path = request.data.get('file_path')
@@ -234,6 +252,7 @@ class ExportDocsView(APIView):
     """
     API endpoint for exporting documentation in different formats.
     """
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, format=None):
         doc_path = request.query_params.get('doc_path')
@@ -251,69 +270,64 @@ class ExportDocsView(APIView):
                 return Response({'status': 'success', 'content': content, 'format': 'markdown'})
                 
             elif export_format == 'html':
-                # Simple HTML conversion (you could use a proper markdown library for this)
-                html_content = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Documentation</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }}
-                        pre {{ background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }}
-                        code {{ background-color: #f5f5f5; padding: 2px 4px; border-radius: 3px; }}
-                        h1, h2, h3, h4 {{ color: #333; }}
-                    </style>
-                </head>
-                <body>
-                    {self._convert_markdown_to_html(content)}
-                </body>
-                </html>
-                """
+                # Use the document exporter for HTML conversion
+                from .utils.document_export import DocumentExporter
+                temp_file = DocumentExporter.create_temporary_file(content, 'html')
+                with open(temp_file, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
                 return Response({'status': 'success', 'content': html_content, 'format': 'html'})
+            
+            elif export_format in ['pdf', 'docx']:
+                # Use the document exporter for PDF and DOCX
+                from .utils.document_export import DocumentExporter
+                temp_file = DocumentExporter.create_temporary_file(content, export_format)
+                # Return file URL for download
+                file_url = f'/media/temp/{os.path.basename(temp_file)}'
+                return Response({
+                    'status': 'success', 
+                    'download_url': file_url, 
+                    'format': export_format
+                })
                 
             else:
                 return Response({'status': 'error', 'message': f'Unsupported export format: {export_format}'}, status=400)
                 
         except Exception as e:
             return Response({'status': 'error', 'message': f'Error exporting documentation: {str(e)}'}, status=500)
-            
-    def _convert_markdown_to_html(self, markdown_text: str) -> str:
-        """
-        Very simple markdown to HTML converter. For a real app, use a proper markdown library.
-        """
-        # This is a very simplified implementation
-        # Convert headers
-        for i in range(6, 0, -1):
-            markdown_text = markdown_text.replace('#' * i + ' ', f'<h{i}>') + f'</h{i}>'
-            
-        # Convert code blocks
-        markdown_text = markdown_text.replace('```python', '<pre><code>')
-        markdown_text = markdown_text.replace('```', '</code></pre>')
+    
+    def post(self, request):
+        """Handle creating a temporary document for export from raw content"""
+        content = request.data.get('content')
+        export_format = request.data.get('format', 'pdf')
         
-        # Convert inline code
-        lines = []
-        for line in markdown_text.split('\n'):
-            while '`' in line:
-                line = line.replace('`', '<code>', 1).replace('`', '</code>', 1)
-            lines.append(line)
-            
-        # Convert lists
-        result = []
-        for line in lines:
-            if line.startswith('- '):
-                result.append('<li>' + line[2:] + '</li>')
-            else:
-                result.append(line)
-                
-        # Add paragraphs
-        html = '<p>' + '</p><p>'.join('\n'.join(result).split('\n\n')) + '</p>'
+        if not content:
+            return Response({'status': 'error', 'message': 'No content provided'}, status=400)
         
-        return html
+        try:
+            # Import the document exporter
+            from .utils.document_export import DocumentExporter
+            
+            # Generate the document
+            temp_file = DocumentExporter.create_temporary_file(content, export_format)
+            
+            # Return the download URL
+            file_url = f'/media/temp/{os.path.basename(temp_file)}'
+            return Response({
+                'status': 'success',
+                'download_url': file_url,
+                'format': export_format
+            })
+            
+        except Exception as e:
+            import traceback
+            print(traceback.format_exc())
+            return Response({'status': 'error', 'message': f'Error creating {export_format} document: {str(e)}'}, status=500)
 
 class AIStatusView(APIView):
     """
     API endpoint to check the status of AI integration.
     """
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         # Import here to avoid circular imports
         from .utils.llm_integration import DEEPSEEK_API_KEY

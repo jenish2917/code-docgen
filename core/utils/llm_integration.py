@@ -15,6 +15,7 @@ def get_api_key() -> Optional[str]:
     # First try environment variable
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if api_key:
+        print("Using API key from environment variable")
         return api_key
     
     # Next, try apikeys.txt file
@@ -23,15 +24,24 @@ def get_api_key() -> Optional[str]:
         base_dir = Path(__file__).resolve().parent.parent.parent
         api_keys_file = base_dir / "apikeys.txt"
         
+        print(f"Looking for API key in file: {api_keys_file}")
         if api_keys_file.exists():
             with open(api_keys_file, "r") as f:
-                for line in f:
+                file_content = f.read()
+                print(f"API keys file content (first 20 chars): {file_content[:20]}...")
+                
+                for line in file_content.splitlines():
                     if line.strip().startswith("DEEPSEEK_API_KEY="):
-                        return line.strip().split("=", 1)[1]
+                        key = line.strip().split("=", 1)[1]
+                        print(f"Found API key in file: {key[:5]}...{key[-5:] if len(key) > 10 else 'INVALID'}")
+                        return key
+                
+                print("No DEEPSEEK_API_KEY entry found in apikeys.txt")
     except Exception as e:
         print(f"Error reading API key file: {e}")
     
     # Last resort, hardcoded key (for development only)
+    print("Using hardcoded API key")
     return "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"
 
 # Set API key
@@ -46,17 +56,17 @@ def generate_documentation_with_deepseek(code_content: str, filename: str) -> Tu
         filename: The name of the file being documented
         
     Returns:
-        Tuple[str, str]: Generated documentation in markdown format and the generator name ('deepseek' or 'fallback')
+        Tuple[str, str]: Generated documentation in markdown format and the generator name ('deepseek' or 'ast')
     """
     # Check if code content is empty
     if not code_content or len(code_content.strip()) == 0:
         print("Empty code content provided, can't generate documentation")
-        return None, "fallback"
+        return None, "ast"
     
     # Check if API key is available and valid
     if not DEEPSEEK_API_KEY or len(DEEPSEEK_API_KEY) < 10:
         print("Invalid or missing DeepSeek API key")
-        return None, "fallback"
+        return None, "ast"
     
     try:
         # Log attempt
@@ -117,8 +127,17 @@ Here is the code to document from the file named '{filename}':
 
 ```python
 {code_content}
-```"""
-
+```"""        # Print debug info before API call
+        print(f"Making API call with key: {DEEPSEEK_API_KEY[:5]}...{DEEPSEEK_API_KEY[-5:]}")
+        
+        request_data = {
+            "model": "deepseek/deepseek-r1-0528:free",
+            "messages": [{"role": "user", "content": prompt[:100] + "..."}],  # Truncated for logging
+            "max_tokens": 4000,
+            "temperature": 0.1,
+        }
+        print(f"Request data: {json.dumps(request_data, indent=2)}")
+        
         # Make the API call to OpenRouter using DeepSeek model
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
@@ -141,10 +160,10 @@ Here is the code to document from the file named '{filename}':
             }),
             timeout=120  # Increased timeout for larger files
         )
-        
-        # Check if the response was successful
+          # Check if the response was successful
         if response.status_code == 200:
             result = response.json()
+            print(f"DeepSeek API response JSON: {json.dumps(result, indent=2)[:500]}...")
             documentation = result["choices"][0]["message"]["content"]
             
             # Simple validation to ensure we got a proper markdown response
@@ -156,22 +175,23 @@ Here is the code to document from the file named '{filename}':
                 return documentation, "deepseek"
             else:
                 print(f"DeepSeek API returned invalid documentation format for {filename}")
-                return None, "fallback"
+                print(f"Documentation content: {documentation[:200]}...")
+                return None, "ast"
         else:
             print(f"Error from DeepSeek API: {response.status_code} - {response.text}")
-            return None, "fallback"
+            return None, "ast"
     except requests.exceptions.Timeout:
         print(f"Timeout when calling DeepSeek API for {filename}")
-        return None, "fallback"
+        return None, "ast"
     except requests.exceptions.RequestException as e:
         print(f"Network error when calling DeepSeek API: {str(e)}")
-        return None, "fallback"
+        return None, "ast"
     except json.JSONDecodeError:
         print("Invalid JSON response from DeepSeek API")
-        return None, "fallback"
+        return None, "ast"
     except Exception as e:
         print(f"Exception when calling DeepSeek API: {str(e)}")
-        return None, "fallback"
+        return None, "ast"
 
 def generate_documentation_with_retry(code_content: str, filename: str) -> Tuple[str, str]:
     """
@@ -182,15 +202,22 @@ def generate_documentation_with_retry(code_content: str, filename: str) -> Tuple
         filename: The name of the file being documented
         
     Returns:
-        Tuple[str, str]: Generated documentation in markdown format and the generator name ('deepseek' or 'fallback')
+        Tuple[str, str]: Generated documentation in markdown format and the generator name ('deepseek' or 'ast')
     """
     max_retries = 3
     retry_count = 0
     
+    print(f"Attempting to generate documentation for {filename} with {max_retries} max retries")
+    
     while retry_count < max_retries:
         try:
+            print(f"Attempt {retry_count + 1}/{max_retries} for {filename}")
             documentation, generator = generate_documentation_with_deepseek(code_content, filename)
+            
+            print(f"Attempt result: documentation={documentation is not None}, generator={generator}")
+            
             if documentation:
+                print(f"Successful documentation generation on attempt {retry_count + 1}")
                 return documentation, generator
                 
             # If we get None back, retry after a delay
@@ -200,10 +227,12 @@ def generate_documentation_with_retry(code_content: str, filename: str) -> Tuple
             retry_count += 1
         except Exception as e:
             print(f"Error in retry loop: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             retry_count += 1
             import time
             time.sleep(2)
     
     # If all retries failed, fall back to AST parsing
     print("All API retries failed. Falling back to AST parsing.")
-    return None, "fallback"
+    return None, "ast"

@@ -13,10 +13,9 @@ const CodeHighlighter = ({ language, children }) => {
   useEffect(() => {
     Prism.highlightAll();
   }, [children]);
-
   return (
-    <pre className={`language-${language || 'python'}`}>
-      <code className={`language-${language || 'python'}`}>{children}</code>
+    <pre className={`language-${language || 'python'} rounded-lg bg-gray-800 dark:bg-gray-900 p-4 overflow-auto my-4`}>
+      <code className={`language-${language || 'python'} text-sm`}>{children}</code>
     </pre>
   );
 };

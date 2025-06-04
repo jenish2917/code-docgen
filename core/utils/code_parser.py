@@ -20,12 +20,15 @@ def parse_codebase(filepath: str) -> Tuple[str, str]:
             content = f.read()
         
         # First attempt to generate documentation using DeepSeek AI with retry logic
+        print(f"***** ATTEMPTING TO USE DEEPSEEK AI FOR: {os.path.basename(filepath)} *****")
         llm_doc, generator = generate_documentation_with_retry(content, os.path.basename(filepath))
-        
+        print(f"***** RESULT FROM DEEPSEEK: doc={llm_doc is not None}, generator={generator} *****")
+      
         # If LLM generation is successful, return it
         if llm_doc:
-            return llm_doc, "deepseek"
-            
+            print(f"Successfully generated documentation with generator: {generator}")
+            return llm_doc, generator
+        
         # If LLM fails, fall back to AST parsing
         print("LLM documentation generation failed, falling back to AST parsing...")
         

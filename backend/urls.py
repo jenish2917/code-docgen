@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from core.views import (
     UploadCodeView,
     UploadProjectView,
@@ -32,7 +32,9 @@ urlpatterns = [
     path('api/upload-project/', UploadProjectView.as_view()),
     path('api/generate-docs/', GenerateDocsView.as_view()),
     path('api/export-docs/', ExportDocsView.as_view()),
+    path('api/export-docs/create-temp/', ExportDocsView.as_view()),
     path('api/ai-status/', AIStatusView.as_view()),
+    path('api/auth/', include('authentication.urls')),
 ]
 
 if settings.DEBUG:
