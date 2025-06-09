@@ -35,7 +35,7 @@ function App() {
         const newStats = { ...prevStats };
         newStats.totalFiles += 1;
         
-        if (data.generator === 'deepseek') {
+        if (data.generator === 'openrouter') {
           newStats.aiGenerated += 1;
         } else if (data.generator === 'ast') {
           newStats.astGenerated += 1;

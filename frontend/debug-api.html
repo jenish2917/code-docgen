@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Connection Test</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            line-height: 1.6;
+        }
+        pre { 
+            background: #f4f4f4; 
+            border: 1px solid #ddd; 
+            padding: 10px; 
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>API Connection Test</h1>
+    
+    <div>
+        <h2>1. Test Direct Backend Connection</h2>
+        <button onclick="testDirectBackend()">Test Direct Connection to http://localhost:8000/api/ai-status/</button>
+        <div id="directResult"></div>
+    </div>
+
+    <div>
+        <h2>2. Test Proxy Connection</h2>
+        <button onclick="testProxiedBackend()">Test Proxied Connection to /api/ai-status/</button>
+        <div id="proxyResult"></div>
+    </div>
+
+    <div>
+        <h2>3. CORS Test</h2>
+        <button onclick="testCORS()">Test CORS Configuration</button>
+        <div id="corsResult"></div>
+    </div>
+
+    <script>
+        // Test direct connection to backend
+        async function testDirectBackend() {
+            const resultDiv = document.getElementById('directResult');
+            resultDiv.innerHTML = "Testing direct connection...";
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/ai-status/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `<p class="success">SUCCESS: Connected directly to backend API!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">ERROR: Server responded with status ${response.status}</p>
+                        <pre>${await response.text()}</pre>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">ERROR: ${error.message}</p>
+                    <p>This could indicate a CORS issue or the backend server is not running.</p>`;
+            }
+        }
+        
+        // Test proxied connection through Vite
+        async function testProxiedBackend() {
+            const resultDiv = document.getElementById('proxyResult');
+            resultDiv.innerHTML = "Testing proxied connection...";
+            
+            try {
+                const response = await fetch('/api/ai-status/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `<p class="success">SUCCESS: Connected to backend API through proxy!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">ERROR: Server responded with status ${response.status}</p>
+                        <pre>${await response.text()}</pre>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">ERROR: ${error.message}</p>
+                    <p>This could indicate a proxy configuration issue in Vite.</p>`;
+            }
+        }
+        
+        // Test CORS configuration
+        async function testCORS() {
+            const resultDiv = document.getElementById('corsResult');
+            resultDiv.innerHTML = "Testing CORS configuration...";
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/ai-status/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Origin': window.location.origin
+                    },
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `<p class="success">SUCCESS: CORS is properly configured!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">ERROR: Server responded with status ${response.status}</p>
+                        <pre>${await response.text()}</pre>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">ERROR: ${error.message}</p>
+                    <p>This likely indicates a CORS configuration issue.</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

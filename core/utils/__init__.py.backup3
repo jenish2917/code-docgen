@@ -1,0 +1,24 @@
+# Make essential functions available at the package level
+# Use direct module level imports to avoid circular dependencies
+import os
+import requests
+import json
+from typing import Tuple, Optional
+
+# Import the API key
+from .llm_integration import OPENROUTER_API_KEY, check_openrouter_api_status
+
+# Define the functions at package level if import fails
+def generate_documentation_with_retry(code_content: str, filename: str) -> Tuple[str, str]:
+    """
+    Forward to the implementation in llm_integration.py
+    """
+    from .llm_integration import generate_documentation_with_retry as impl
+    return impl(code_content, filename)
+
+def generate_documentation_with_openrouter(code_content: str, filename: str) -> Tuple[str, str]:
+    """
+    Forward to the implementation in llm_integration.py
+    """
+    from .llm_integration import generate_documentation_with_openrouter as impl
+    return impl(code_content, filename)

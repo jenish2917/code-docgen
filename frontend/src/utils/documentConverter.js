@@ -25,7 +25,7 @@ export const markdownToHtml = (markdown) => {
     .replace(/^### (.*$)/gm, '<h3>$1</h3>')
     .replace(/^#### (.*$)/gm, '<h4>$1</h4>')
     // Lists
-    .replace(/^\s*\- (.*$)/gm, '<li>$1</li>')
+    .replace(/^\s*\- (.*$)/gm, '<ul><li>$1</li></ul>')
     // Line breaks
     .replace(/\n/g, '<br>');
 };

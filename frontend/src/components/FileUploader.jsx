@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, File, X, Loader2 } from 'lucide-react';
 import api from '../utils/api';
+import predictionService from '../services/predictionService';
 import { toast } from 'react-toastify';
 
 const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
@@ -47,29 +48,14 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
     console.log("Uploading files:", files.map(f => f.name).join(', '));
     setIsUploading(true);
     if (onUploadStart) onUploadStart();
-    
-    // Single file upload
+      // Single file upload
     if (files.length === 1) {
       const file = files[0];
-      const formData = new FormData();
-      formData.append('file', file);
+      const isZip = file.name.endsWith('.zip');
       
-      // Determine endpoint based on file type
-      const endpoint = file.name.endsWith('.zip') 
-        ? '/api/upload-project/'
-        : '/api/upload/';
-        
       try {
-        console.log("Uploading to endpoint:", endpoint);
-        const response = await api.post(endpoint, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            console.log(`Upload progress: ${percentCompleted}%`);
-          }
-        });
+        console.log("Uploading file:", file.name);
+        const response = await predictionService.uploadFile(file, isZip);
         
         console.log("Upload success response:", response.data);
         toast.success(`Successfully uploaded ${file.name}!`);
@@ -96,11 +82,22 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
                               error.response?.data?.message || 
                               'Unknown server error';
                               
-          onUploadError(`Server error: ${error.response.status} - ${errorMessage}`);
-        } else if (error.request) {
+          onUploadError(`Server error: ${error.response.status} - ${errorMessage}`);        } else if (error.request) {
           // The request was made but no response was received
           console.error("No response received:", error.request);
-          onUploadError("No response from server. Please check if the backend server is running.");
+          // First try to verify if the server is actually running
+          fetch('http://localhost:8000/api/ai-status/')
+            .then(response => {
+              if (response.ok) {
+                // Server is running but the specific request failed
+                onUploadError("Server is running but the upload request failed. Try again or use a smaller file.");
+              } else {
+                onUploadError("No response from server. Please check if the backend server is running.");
+              }
+            })
+            .catch(() => {
+              onUploadError("No response from server. Please check if the backend server is running.");
+            });
         } else {
           // Something happened in setting up the request
           console.error("Request setup error:", error.message);
@@ -108,24 +105,16 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
         }
       } finally {
         setIsUploading(false);
-      }
-    } else {
+      }    } else {
       // Handle multiple files upload
       try {
         toast.info("Processing multiple files...");
         // For now, just handle the first file as an example
         // In a real implementation, you would need to handle multiple file uploads
         const file = files[0];
-        const formData = new FormData();
-        formData.append('file', file);
+        const isZip = file.name.endsWith('.zip');
         
-        const endpoint = '/api/upload/'; // Use default endpoint for now
-        
-        const response = await api.post(endpoint, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          }
-        });
+        const response = await predictionService.uploadFile(file, isZip);
         
         toast.success(`Successfully processed files!`);
         onUploadSuccess(response.data);

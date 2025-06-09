@@ -1,0 +1,7 @@
+# Make functions available at package level
+from .llm_integration import (
+    generate_documentation_with_retry,
+    generate_documentation_with_openrouter,
+    check_openrouter_api_status,
+    OPENROUTER_API_KEY
+)

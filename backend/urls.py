@@ -21,7 +21,8 @@ from core.views import (
     UploadProjectView,
     GenerateDocsView,
     ExportDocsView,
-    AIStatusView
+    AIStatusView,
+    AskDeepSeekView
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -34,6 +35,7 @@ urlpatterns = [
     path('api/export-docs/', ExportDocsView.as_view()),
     path('api/export-docs/create-temp/', ExportDocsView.as_view()),
     path('api/ai-status/', AIStatusView.as_view()),
+    path('api/ask-deepseek/', AskDeepSeekView.as_view()),
     path('api/auth/', include('authentication.urls')),
 ]
 

@@ -1,8 +1,6 @@
 """
 Utilities for exporting documentation in different formats
 """
-import os
-import tempfile
 import uuid
 from pathlib import Path
 from django.conf import settings

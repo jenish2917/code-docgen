@@ -5,22 +5,93 @@ const AIConfigStatus = () => {
   const [aiStatus, setAiStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  
   useEffect(() => {
     const fetchAIStatus = async () => {
-      try {        setIsLoading(true);
+      try {        
+        setIsLoading(true);
+        // Add more detailed debugging
+        console.log('------------- DEBUG AI STATUS -------------');
+        console.log('API Base URL:', api.defaults.baseURL);
+        console.log('Full URL being called:', api.defaults.baseURL + 'api/ai-status/');
+        console.log('API headers:', api.defaults.headers);
+        console.log('Origin URL:', window.location.origin);
+        console.log('CORS test will be from:', window.location.origin, 'to: http://localhost:8000/api/ai-status/');
+        
+        // Try direct fetch first
+        try {
+          console.log('Testing direct fetch to backend...');
+          const directResponse = await fetch('http://localhost:8000/api/ai-status/', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Origin': window.location.origin
+            }
+          });
+          
+          if (directResponse.ok) {
+            const directData = await directResponse.json();
+            console.log('Direct fetch SUCCESS:', directData);
+          } else {
+            console.error('Direct fetch failed with status:', directResponse.status);
+          }
+        } catch (directErr) {
+          console.error('Direct fetch failed with error:', directErr.message);
+        }
+        
+        // Try proxied fetch
+        try {
+          console.log('Testing proxied fetch...');
+          const proxiedResponse = await fetch('/api/ai-status/');
+          
+          if (proxiedResponse.ok) {
+            const proxiedData = await proxiedResponse.json();
+            console.log('Proxied fetch SUCCESS:', proxiedData);
+          } else {
+            console.error('Proxied fetch failed with status:', proxiedResponse.status);
+          }
+        } catch (proxyErr) {
+          console.error('Proxied fetch failed with error:', proxyErr.message);
+        }
+        
+        console.log('Now trying axios...');
         const response = await api.get('/api/ai-status/');
+        console.log('AI status response received:', response.data);
         setAiStatus(response.data);
         setError(null);
       } catch (err) {
         console.error('Error fetching AI status:', err);
-        setError('Unable to fetch AI integration status');
-      } finally {
+        console.error('Error details:', err.message);
+        if (err.response) {
+          console.error('Status:', err.response.status);
+          console.error('Data:', err.response.data);
+        } else if (err.request) {
+          console.error('No response received');
+          console.error('Request details:', err.request);
+        }
+        setError('Unable to fetch AI integration status');      } finally {
         setIsLoading(false);
+        console.log('------------- END DEBUG -------------');
       }
     };
 
     fetchAIStatus();
-  }, []);
+    
+    // Set up automatic retry if error occurs
+    const retryInterval = setInterval(() => {
+      if (error && retryCount < 3) {
+        console.log(`Retrying AI status fetch (${retryCount + 1}/3)...`);
+        fetchAIStatus();
+        setRetryCount(prev => prev + 1);
+      } else if (retryCount >= 3) {
+        clearInterval(retryInterval);
+      }
+    }, 5000); // Retry every 5 seconds
+    
+    return () => clearInterval(retryInterval);
+  }, [error, retryCount]);
   if (isLoading) {
     return <div className="text-gray-600 dark:text-gray-400 flex items-center justify-center py-4">
       <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -30,9 +101,18 @@ const AIConfigStatus = () => {
       Checking AI integration status...
     </div>;
   }
-
   if (error) {
-    return <div className="text-red-600 dark:text-red-400 p-3 bg-red-100 dark:bg-red-900/20 rounded-lg">{error}</div>;
+    return (
+      <div className="text-red-600 dark:text-red-400 p-3 bg-red-100 dark:bg-red-900/20 rounded-lg">
+        {error}
+        {retryCount < 3 && (
+          <div className="mt-2 text-sm flex items-center">
+            <span className="animate-spin mr-2">⟳</span> 
+            Retrying connection...
+          </div>
+        )}
+      </div>
+    );
   }
   return (
     <div className="space-y-6">

@@ -1,3 +1,6 @@
+"""
+Views for CodeDocGen API
+"""
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -13,7 +16,7 @@ import traceback
 import requests
 from typing import Dict, List, Any
 from .utils.code_parser import parse_codebase
-from .utils import OPENROUTER_API_KEY, check_openrouter_api_status
+from .utils import generate_documentation_with_retry, check_openrouter_api_status, OPENROUTER_API_KEY
 
 
 class UploadCodeView(APIView):
@@ -21,7 +24,7 @@ class UploadCodeView(APIView):
     API endpoint for uploading single code files and generating documentation.
     """
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []  # Allow both authenticated and non-authenticated access
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         print("UploadCodeView received request:", request)
@@ -105,7 +108,7 @@ class UploadProjectView(APIView):
     API endpoint for uploading project folders (as zip files) and generating documentation.
     """
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []  # Allow both authenticated and non-authenticated access
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         try:
@@ -220,53 +223,18 @@ class GenerateDocsView(APIView):
     """
     API endpoint for generating documentation from uploaded files.
     """
-    permission_classes = []  # Allow unauthenticated access
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
-        print("GenerateDocsView received request:", request.data)
-        
-        # Get data from request
-        filename = request.data.get('filename', 'unknown.py')
-        code_content = request.data.get('code_content', '')
-        
-        if not code_content:
-            return Response({
-                'status': 'error', 
-                'message': 'No code content provided'
-            }, status=400)
-        
-        try:
-            # Import the AI documentation generation function
-            from .utils.llm_integration import generate_documentation_with_retry
-            
-            print(f"Generating documentation for {filename}")
-            documentation, generator = generate_documentation_with_retry(code_content, filename)
-            
-            print(f"Documentation generated successfully with {generator}")
-            
-            return Response({
-                'status': 'success',
-                'filename': filename,
-                'documentation': documentation,
-                'generator': generator,
-                'message': 'Documentation generated successfully'
-            })
-            
-        except Exception as e:
-            print(f"Error generating documentation: {str(e)}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-            
-            return Response({
-                'status': 'error',
-                'message': f'Failed to generate documentation: {str(e)}'
-            }, status=500)
+        # This endpoint can be used for custom documentation generation logic
+        return Response({'message': 'Documentation generation endpoint'})
 
 
 class ExportDocsView(APIView):
     """
     API endpoint for exporting documentation in different formats.
     """
-    permission_classes = []  # Allow unauthenticated access
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         try:
@@ -302,11 +270,11 @@ class AIStatusView(APIView):
     """
     API endpoint to check the status of AI integration.
     """
-    permission_classes = []  # Allow both authenticated and non-authenticated access
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        # Using already imported functions
-        # No need to re-import here
+        # Import here to avoid circular imports
+        from .utils.llm_integration import check_openrouter_api_status, OPENROUTER_API_KEY
         
         openrouter_available = check_openrouter_api_status()
         
@@ -326,7 +294,7 @@ class AskDeepSeekView(APIView):
     """
     API endpoint to ask DeepSeek questions using OpenRouter API.
     """
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         """
@@ -336,24 +304,27 @@ class AskDeepSeekView(APIView):
             prompt = request.data.get('prompt', '')
             if not prompt:
                 return Response({'error': 'Prompt is required'}, status=400)
-              # Import here to avoid circular imports
-            from .utils import OPENROUTER_API_KEY
+            
+            # Import here to avoid circular imports
+            from .utils.llm_integration import OPENROUTER_API_KEY
             
             if not OPENROUTER_API_KEY or not OPENROUTER_API_KEY.startswith("sk-or-"):
                 return Response({
                     'error': 'OpenRouter API key not configured',
                     'details': 'Please configure your OpenRouter API key'
-                }, status=500)            # Make the API call to OpenRouter
+                }, status=500)
+
+            # Make the API call to OpenRouter
             response = requests.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8000", 
+                    "HTTP-Referer": "http://localhost:8000",
                     "X-Title": "CodeDocGen"
                 },
-                data=json.dumps({
-                    "model": "deepseek/deepseek-r1:free",
+                json={
+                    "model": "deepseek/deepseek-r1",
                     "messages": [
                         {
                             "role": "user",
@@ -361,8 +332,8 @@ class AskDeepSeekView(APIView):
                         }
                     ],
                     "max_tokens": 1000,
-                    "temperature": 0.7
-                }),
+                    "temperature": 0.7,
+                },
                 timeout=30
             )
 

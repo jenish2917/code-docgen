@@ -16,7 +16,6 @@ def parse_codebase(filepath: str) -> Tuple[str, str]:
     """
     Parse a Python code file and generate documentation using OpenRouter API with DeepSeek models.
     Always returns AI-generated documentation and no longer falls back to AST parsing.
-    The documentation follows enhanced formatting rules for better readability.
     
     Args:
         filepath: Path to the code file

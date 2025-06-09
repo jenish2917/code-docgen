@@ -3,97 +3,88 @@ import ReactMarkdown from 'react-markdown';
 import CodeHighlighter from './CodeHighlighter';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import predictionService from '../services/predictionService';
 
-const DocViewer = ({ content, generator, isLoading }) => {
+const DocViewer = ({ content, generator, isLoading: externalIsLoading }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
   const handleExport = async (format) => {
     if (!content) return;
     
     try {
       // For PDF and DOCX formats, we need to use the server-side conversion
       if (format === 'pdf' || format === 'docx') {
-        // First we need to save the current content to a temporary file on the server
-        // Implement server-side export functionality
-        import('../utils/api').then(async (api) => {
-          try {
-            setIsLoading(true);
-            // Create a temporary document on server
-            const tempDocResponse = await api.default.post('/api/export-docs/create-temp/', {
-              content: content,
-              format: format
-            });
+        try {
+          setIsLoading(true);
+          // Create a temporary document on server
+          const tempDocResponse = await predictionService.exportDocumentation(content, format);
             
-            if (tempDocResponse.data && tempDocResponse.data.download_url) {
-              // Create download link and click it
-              const downloadLink = document.createElement('a');
-              downloadLink.href = tempDocResponse.data.download_url;
-              downloadLink.download = `documentation.${format}`;
-              document.body.appendChild(downloadLink);
-              downloadLink.click();
-              document.body.removeChild(downloadLink);
-              toast.success(`${format.toUpperCase()} document downloaded successfully`);
-            } else {
-              toast.error(`Failed to generate ${format.toUpperCase()} document`);
-            }
-          } catch (error) {
-            console.error(`Error exporting to ${format}:`, error);
-            toast.error(`Error exporting to ${format.toUpperCase()}. Server-side conversion is not yet fully implemented.`);
-          } finally {
-            setIsLoading(false);
-            setShowExportMenu(false);
+          if (tempDocResponse.data && tempDocResponse.data.download_url) {
+            // Create download link and click it
+            const downloadLink = document.createElement('a');
+            downloadLink.href = tempDocResponse.data.download_url;
+            downloadLink.download = `documentation.${format}`;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            toast.success(`${format.toUpperCase()} document downloaded successfully`);
+          } else {
+            toast.error(`Failed to generate ${format.toUpperCase()} document`);
           }
-        });
+        } catch (error) {
+          console.error(`Error exporting to ${format}:`, error);
+          toast.error(`Error exporting to ${format.toUpperCase()}. Server-side conversion is not yet fully implemented.`);
+        } finally {
+          setIsLoading(false);
+          setShowExportMenu(false);
+        }
         return;
-      }
-    
+      }    
       // For other formats, use the client-side conversion
       // Import the document converter utilities
-      import('../utils/documentConverter.js').then(({
-        markdownToHtml,
-        wrapInHtmlDocument,
-        downloadFile,
-        formatFilename
-      }) => {
-        let exportContent = content;
-        let mimeType = 'text/plain';
-        let extension = 'txt';
+      const documentConverter = await import('../utils/documentConverter.js');
+      const { markdownToHtml, wrapInHtmlDocument, downloadFile, formatFilename } = documentConverter;
+      
+      let exportContent = content;
+      let mimeType = 'text/plain';
+      let extension = 'txt';
+      
+      // Format content based on export type
+      switch (format) {
+        case 'html':
+          // Convert markdown to HTML
+          const htmlContent = markdownToHtml(content);
+          exportContent = wrapInHtmlDocument(htmlContent);
+          mimeType = 'text/html';
+          extension = 'html';
+          break;
         
-        // Format content based on export type
-        switch (format) {
-          case 'html':
-            // Convert markdown to HTML
-            const htmlContent = markdownToHtml(content);
-            exportContent = wrapInHtmlDocument(htmlContent);
-            mimeType = 'text/html';
-            extension = 'html';
-            break;
+        case 'md':
+          // Keep as markdown
+          mimeType = 'text/markdown';
+          extension = 'md';
+          break;
           
-          case 'md':
-            // Keep as markdown
-            mimeType = 'text/markdown';
-            extension = 'md';
-            break;
-            
-          default:
-            // Plain text
-            break;
-        }
-        
-        // Create a filename
-        const filename = formatFilename('documentation', extension);
-        
-        // Download the file
-        downloadFile(exportContent, filename, mimeType);
-        setShowExportMenu(false);
-      });
+        default:
+          // Plain text
+          break;
+      }
+      
+      // Create a filename
+      const filename = formatFilename('documentation', extension);
+      
+      // Download the file
+      downloadFile(exportContent, filename, mimeType);
+      setShowExportMenu(false);
+      
     } catch (error) {
       console.error('Export error:', error);
       toast.error('Failed to export document. Please try again.');
       setShowExportMenu(false);
     }
   };
-
-  if (isLoading) {
+  if (externalIsLoading || isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-pulse">Loading documentation...</div>
@@ -198,7 +189,7 @@ const DocViewer = ({ content, generator, isLoading }) => {
           {generator && (
             <div 
               className={`px-3 py-1 rounded-full text-sm font-medium ${
-                generator === 'deepseek' 
+                generator === 'openrouter'
                   ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' 
                 : generator === 'ast' 
                   ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
@@ -206,7 +197,7 @@ const DocViewer = ({ content, generator, isLoading }) => {
               }`} 
               title={`Documentation generated by ${generator}`}
             >
-              {generator === 'deepseek' ? '🤖 AI Generated' : 
+              {generator === 'openrouter' ? '🤖 AI Generated' :
                generator === 'ast' ? '🧩 AST Parser' : 
                generator === 'error' ? '⚠️ Error' : '🧩 AST Parser'}
             </div>
