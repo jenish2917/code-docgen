@@ -2,48 +2,26 @@ import ast
 import os
 from typing import Dict, List, Any, Union, Tuple
 
-# Import directly from the package 
-# We'll implement a fallback if the import fails
 try:
-    from .llm_integration import generate_documentation_with_retry
+    from .llm_integration import generate_fast_documentation
 except ImportError:
-    # Provide a fallback implementation if import fails
-    def generate_documentation_with_retry(code_content: str, filename: str) -> Tuple[str, str]:
-        """Fallback implementation if import fails"""
-        return f"# Documentation for `{filename}`\n\nImport error occurred.", "error"
+    def generate_fast_documentation(code_content: str, filename: str) -> Tuple[str, bool]:
+        return f"# Documentation for `{filename}`\\n\\nImport error occurred.", False
 
 def parse_codebase(filepath: str) -> Tuple[str, str]:
-    """
-    Parse a Python code file and generate documentation using OpenRouter API with DeepSeek models.
-    Always returns AI-generated documentation and no longer falls back to AST parsing.
-    The documentation follows enhanced formatting rules for better readability.
-    
-    Args:
-        filepath: Path to the code file
-        
-    Returns:
-        Tuple[str, str]: Generated documentation in markdown format and the generator name ('openrouter')
-    """
     try:
-        # Read the content of the file
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
             
-        # Generate documentation using OpenRouter API with DeepSeek models
-        print(f"***** ATTEMPTING TO USE OPENROUTER API FOR: {os.path.basename(filepath)} *****")
-        llm_doc, generator = generate_documentation_with_retry(content, os.path.basename(filepath))
-        print(f"***** RESULT FROM OPENROUTER API: doc={llm_doc is not None}, generator={generator} *****")
-      
-        # Always return AI-generated documentation (the retry function should always return something)
-        print(f"Successfully generated documentation with generator: {generator}")
+        llm_doc, success = generate_fast_documentation(content, os.path.basename(filepath))
+        generator = "AI-Enhanced" if success else "Fallback"
         return llm_doc, generator
         
     except Exception as e:
         error_doc = f"# Error in Documentation Generation\n\nAn error occurred while parsing the file: {str(e)}"
         return error_doc, "error"
 
-def _extract_class_info(node: ast.ClassDef) -> Dict[str, Any]:
-    """Extract information from a class definition"""
+def extract_class_info(node: ast.ClassDef) -> Dict[str, Any]:
     class_info = {
         "name": node.name,
         "docstring": ast.get_docstring(node) or "No documentation available",
@@ -51,140 +29,87 @@ def _extract_class_info(node: ast.ClassDef) -> Dict[str, Any]:
         "attributes": []
     }
     
-    # Extract methods and class attributes
-    for item in node.body:
-        if isinstance(item, ast.FunctionDef):
-            method_info = _extract_function_info(item)
+    for child in node.body:
+        if isinstance(child, ast.FunctionDef):
+            method_info = extract_function_info(child)
             class_info["methods"].append(method_info)
-        elif isinstance(item, ast.Assign):
-            for target in item.targets:
+        elif isinstance(child, ast.Assign):
+            for target in child.targets:
                 if isinstance(target, ast.Name):
                     class_info["attributes"].append({
                         "name": target.id,
-                        "value": ast.unparse(item.value) if hasattr(ast, 'unparse') else "Value not extractable"
+                        "type": "Unknown"
                     })
     
     return class_info
 
-def _extract_function_info(node: ast.FunctionDef) -> Dict[str, Any]:
-    """Extract information from a function definition"""
+def extract_function_info(node: ast.FunctionDef) -> Dict[str, Any]:
     function_info = {
         "name": node.name,
         "docstring": ast.get_docstring(node) or "No documentation available",
-        "parameters": [],
-        "returns": None
+        "args": [],
+        "returns": "Unknown"
     }
     
-    # Extract parameters
     for arg in node.args.args:
-        param = {
-            "name": arg.arg,
-            "annotation": ast.unparse(arg.annotation) if hasattr(arg, 'annotation') and arg.annotation and hasattr(ast, 'unparse') else None
-        }
-        function_info["parameters"].append(param)
-    
-    # Try to determine return type from return annotation or docstring
-    if node.returns:
-        function_info["returns"] = ast.unparse(node.returns) if hasattr(ast, 'unparse') else "Return type not extractable"
+        arg_info = {"name": arg.arg, "type": "Unknown"}
+        function_info["args"].append(arg_info)
     
     return function_info
 
-def _extract_import_info(node: Union[ast.Import, ast.ImportFrom]) -> List[Dict[str, str]]:
-    """Extract information from import statements"""
+def extract_imports(tree: ast.AST) -> List[str]:
     imports = []
     
-    if isinstance(node, ast.Import):
-        for name in node.names:
-            imports.append({"module": name.name, "alias": name.asname})
-    elif isinstance(node, ast.ImportFrom):
-        module = node.module or ""
-        for name in node.names:
-            imports.append({"module": f"{module}.{name.name}", "alias": name.asname})
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imports.append(node.module)
     
     return imports
 
-def _generate_markdown_doc(code_structure: Dict[str, Any], original_content: str) -> Tuple[str, str]:
-    """Generate markdown documentation from parsed code structure"""
-    filename = code_structure["filename"]
-    doc = f"# Documentation for `{filename}`\n\n"
-    
-    # Add file overview
-    doc += "## Overview\n\n"
-    doc += _get_file_overview(original_content, filename)
-    
-    # Document imports/dependencies
-    if code_structure["imports"]:
-        doc += "\n## Dependencies\n\n"
-        for imp in code_structure["imports"]:
-            alias_text = f" as {imp['alias']}" if imp['alias'] else ""
-            doc += f"- `{imp['module']}{alias_text}`\n"
-    
-    # Document classes
-    if code_structure["classes"]:
-        doc += "\n## Classes\n\n"
-        for cls in code_structure["classes"]:
-            doc += f"### `{cls['name']}`\n\n"
-            doc += f"{cls['docstring']}\n\n"
-            
-            # Class attributes
-            if cls["attributes"]:
-                doc += "#### Attributes\n\n"
-                for attr in cls["attributes"]:
-                    doc += f"- `{attr['name']}`: {attr['value']}\n"
-                doc += "\n"
-            
-            # Class methods
-            if cls["methods"]:
-                doc += "#### Methods\n\n"
-                for method in cls["methods"]:
-                    params = ", ".join([p["name"] for p in method["parameters"]])
-                    doc += f"##### `{method['name']}({params})`\n\n"
-                    doc += f"{method['docstring']}\n\n"
-                    
-                    # Parameters
-                    if method["parameters"]:
-                        doc += "Parameters:\n"
-                        for param in method["parameters"]:
-                            type_str = f": `{param['annotation']}`" if param['annotation'] else ""
-                            doc += f"- `{param['name']}`{type_str}\n"
-                        doc += "\n"
-                    
-                    # Return value
-                    if method["returns"]:
-                        doc += f"Returns: `{method['returns']}`\n\n"
-    
-    # Document functions
-    if code_structure["functions"]:
-        doc += "\n## Functions\n\n"
-        for func in code_structure["functions"]:
-            params = ", ".join([p["name"] for p in func["parameters"]])
-            doc += f"### `{func['name']}({params})`\n\n"
-            doc += f"{func['docstring']}\n\n"
-            
-            # Parameters
-            if func["parameters"]:
-                doc += "Parameters:\n"
-                for param in func["parameters"]:
-                    type_str = f": `{param['annotation']}`" if param['annotation'] else ""
-                    doc += f"- `{param['name']}`{type_str}\n"
-                doc += "\n"
-            
-            # Return value
-            if func["returns"]:
-                doc += f"Returns: `{func['returns']}`\n\n"
-    
-    return doc, "ast"
-
-def _get_file_overview(content: str, filename: str) -> str:
-    """
-    Generate a file overview from the module docstring.
-    For enhanced overview, you can integrate OpenAI later.
-    """
+def analyze_code_structure(code_content: str) -> Dict[str, Any]:
     try:
-        tree = ast.parse(content)
-        module_docstring = ast.get_docstring(tree)
-        if module_docstring:
-            return module_docstring
-        return f"This file `{filename}` contains Python code. No module-level docstring was found."
-    except:
-        return "Unable to generate overview."
+        tree = ast.parse(code_content)
+        
+        classes = []
+        functions = []
+        imports = extract_imports(tree)
+        
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                class_info = extract_class_info(node)
+                classes.append(class_info)
+            elif isinstance(node, ast.FunctionDef):
+                function_info = extract_function_info(node)
+                functions.append(function_info)
+        
+        return {
+            "classes": classes,
+            "functions": functions,
+            "imports": imports,
+            "total_lines": len(code_content.splitlines()),
+            "has_docstrings": any(ast.get_docstring(node) for node in ast.walk(tree) 
+                                if isinstance(node, (ast.FunctionDef, ast.ClassDef)))
+        }
+        
+    except SyntaxError as e:
+        return {
+            "error": f"Syntax error in code: {str(e)}",
+            "classes": [],
+            "functions": [],
+            "imports": [],
+            "total_lines": len(code_content.splitlines()),
+            "has_docstrings": False
+        }
+    except Exception as e:
+        return {
+            "error": f"Error analyzing code: {str(e)}",
+            "classes": [],
+            "functions": [],
+            "imports": [],
+            "total_lines": 0,
+            "has_docstrings": False
+        }

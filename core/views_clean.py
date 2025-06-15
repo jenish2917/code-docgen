@@ -31,19 +31,11 @@ class UploadCodeView(APIView):
             with open(save_path, 'wb+') as f:
                 for chunk in uploaded_file.chunks():
                     f.write(chunk)
-  # Check if file is supported for AI documentation
-            from .utils.llm_integration import is_supported_file, get_file_language
             
-            if is_supported_file(uploaded_file.name):
+            if save_path.endswith('.py'):
                 try:
-                    file_language = get_file_language(uploaded_file.name)
-                    print(f"🤖 Generating AI documentation for {file_language} file: {uploaded_file.name}")
-                    
                     doc_content, generator = parse_codebase(save_path)
                     doc_path = f'docs_output/{uploaded_file.name}_doc.md'
-                    
-                    # Determine if AI was used (removed OpenRouter - paid service)
-                    ai_generated = generator in ["AI-Enhanced", "AI-Generated", "ollama"]
                     
                     with open(doc_path, 'w', encoding='utf-8') as f:
                         f.write(doc_content)
@@ -52,21 +44,13 @@ class UploadCodeView(APIView):
                         'status': 'success', 
                         'documentation': doc_content,
                         'filename': uploaded_file.name,
-                        'message': f'AI documentation generated successfully for {file_language} file',
-                        'ai_generated': ai_generated,
-                        'generator': generator,
-                        'file_language': file_language
+                        'message': 'Documentation generated successfully'
                     })
                 except Exception as e:
                     return Response({
                         'status': 'error',
                         'message': f'Error generating documentation: {str(e)}'
                     }, status=500)
-            else:
-                return Response({
-                    'status': 'error',
-                    'message': f'File type not supported. Supported types: Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Ruby, Go, Rust, and more.'
-                }, status=400)
                     
         except Exception as e:
             return Response({
@@ -304,19 +288,11 @@ class UploadFolderView(APIView):
     permission_classes = []
     
     def post(self, request):
-        # Check for folder files first, then fallback to regular files
-        if 'folder_files' in request.FILES:
-            files = request.FILES.getlist('folder_files')
-            file_paths = request.data.getlist('file_paths', [])
-        elif 'files' in request.FILES:
-            files = request.FILES.getlist('files')
-            file_paths = []
-        else:
+        if 'files' not in request.FILES:
             return Response({'status': 'error', 'message': 'No files provided'}, status=400)
         
+        files = request.FILES.getlist('files')
         folder_name = request.data.get('folder_name', 'uploaded_folder')
-        
-        print(f"📁 Processing folder upload with {len(files)} files")
         
         results = []
         
@@ -338,19 +314,12 @@ class UploadFolderView(APIView):
                 with open(save_path, 'wb+') as f:
                     for chunk in uploaded_file.chunks():
                         f.write(chunk)
-                  # Check if file is supported for AI documentation
-                from .utils.llm_integration import is_supported_file, get_file_language
                 
-                if is_supported_file(uploaded_file.name):
+                if save_path.endswith('.py'):
                     try:
-                        file_language = get_file_language(uploaded_file.name)
-                        print(f"🤖 Generating AI documentation for {file_language} file: {relative_path}")
-                        
                         doc_content, generator = parse_codebase(save_path)
                         doc_filename = relative_path.replace('/', '_').replace('\\', '_')
                         doc_path = f'docs_output/{folder_name}_{doc_filename}_doc.md'
-                          # Determine if AI was used (removed OpenRouter - paid service)
-                        ai_generated = generator in ["AI-Enhanced", "AI-Generated", "ollama"]
                         
                         with open(doc_path, 'w', encoding='utf-8') as f:
                             f.write(doc_content)
@@ -359,10 +328,7 @@ class UploadFolderView(APIView):
                             'filename': relative_path,
                             'status': 'success',
                             'documentation': doc_content[:300] + '...' if len(doc_content) > 300 else doc_content,
-                            'doc_path': doc_path,
-                            'ai_generated': ai_generated,
-                            'generator': generator,
-                            'file_language': file_language
+                            'doc_path': doc_path
                         })
                     except Exception as e:
                         results.append({

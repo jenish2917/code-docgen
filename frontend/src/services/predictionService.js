@@ -2,7 +2,7 @@ import api from '../utils/api';
 
 /**
  * Service for handling code documentation prediction functionality
- * Using GitHub AI Marketplace models instead of OpenRouter
+ * Using local Ollama models for free, open-source AI documentation generation
  */
 const predictionService = {
     /**
@@ -25,17 +25,15 @@ const predictionService = {
             } else {
                 console.log('API connection verified before upload');
             }
-            
-            return api.post(endpoint, formData, {
+              return api.post(endpoint, formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
-                },
-                onUploadProgress: (progressEvent) => {
+                },                onUploadProgress: (progressEvent) => {
                     const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
                     console.log(`Upload progress: ${percentCompleted}%`);
                 },
-                // Increase timeout for large files
-                timeout: 60000 // 60 seconds
+                // Increase timeout for Ollama processing (can take much longer for complex files)
+                timeout: 3600000 // 60 minutes
             });
         } catch (error) {
             console.error('Error in uploadFile:', error);
@@ -49,9 +47,7 @@ const predictionService = {
      */
     getStats: async () => {
         return api.get('/api/stats/');
-    },
-
-    /**
+    },    /**
      * Export documentation to specified format
      * @param {string} content - The content to export
      * @param {string} format - The format to export to (pdf, docx)
@@ -62,6 +58,64 @@ const predictionService = {
             content,
             format
         });
+    },
+
+    /**
+     * Upload multiple individual files for documentation generation
+     * @param {File[]} files - Array of files to upload
+     * @returns {Promise} - Promise with the API response
+     */
+    uploadMultipleFiles: async (files) => {
+        const formData = new FormData();
+        files.forEach((file, index) => {
+            formData.append(`files`, file);
+        });
+        
+        try {
+            return api.post('/api/upload-multiple/', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    console.log(`Multiple files upload progress: ${percentCompleted}%`);
+                },
+                timeout: 3600000 // 60 minutes for multiple files
+            });
+        } catch (error) {
+            console.error('Error in uploadMultipleFiles:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Upload an entire folder for documentation generation
+     * @param {File[]} files - Array of files from folder selection
+     * @returns {Promise} - Promise with the API response
+     */
+    uploadFolder: async (files) => {
+        const formData = new FormData();
+        
+        // Add each file with its relative path preserved
+        files.forEach((file) => {
+            formData.append('folder_files', file);
+            // Also send the relative path information
+            formData.append('file_paths', file.webkitRelativePath || file.name);
+        });
+        
+        try {
+            return api.post('/api/upload-folder/', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    console.log(`Folder upload progress: ${percentCompleted}%`);
+                },
+                timeout: 3600000 // 60 minutes for folder processing
+            });
+        } catch (error) {
+            console.error('Error in uploadFolder:', error);
+            throw error;
+        }
     },
 
     /**

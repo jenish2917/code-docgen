@@ -5,7 +5,7 @@ const api = axios.create({
     // For development with Vite proxy, use relative URLs
     baseURL: '/',
     // Add proper timeout and response type
-    timeout: 30000, // 30 seconds
+    timeout: 3600000, // 60 minutes (increased for complex file processing)
     responseType: 'json'
 });
 

@@ -18,32 +18,42 @@ function App() {
   const [generator, setGenerator] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [docStats, setDocStats] = useState({
-    aiGenerated: 0,
-    astGenerated: 0,
+    documentsGenerated: 0,
+    projectsAnalyzed: 0,
     totalFiles: 0
   })
 
   const handleUploadSuccess = (data) => {
+    console.log("Upload success data:", data); // Debug log
     setError(null)
-    setDocs(data.doc || "")
-    setGenerator(data.generator || "")
+    setDocs(data.documentation || data.doc || "")
+    setGenerator(data.generator || "AI-Generated")
     setIsLoading(false)
     
-    // Update statistics
-    if (data.generator) {
-      setDocStats(prevStats => {
-        const newStats = { ...prevStats };
+    // Debug log to check what we set
+    console.log("Set docs:", data.documentation || data.doc || "");
+    console.log("Set generator:", data.generator || "AI-Generated");
+    
+    // Update statistics - always update for successful uploads
+    setDocStats(prevStats => {
+      const newStats = { ...prevStats };
+      
+      // Handle different response types
+      if (data.status === 'success') {
+        // Single file processing (most common case)
         newStats.totalFiles += 1;
+        newStats.documentsGenerated += 1;
         
-        if (data.generator === 'openrouter') {
-          newStats.aiGenerated += 1;
-        } else if (data.generator === 'ast') {
-          newStats.astGenerated += 1;
-        }
-        
-        return newStats;
-      });
-    }
+        console.log("Updated stats:", newStats); // Debug log
+      } else if (data.generator === 'multiple' || data.generator === 'folder') {
+        // For multiple files or folders, use the processed_count if available
+        const filesProcessed = data.processed_count || data.total_count || 1;
+        newStats.totalFiles += filesProcessed;
+        newStats.projectsAnalyzed += 1;
+      }
+      
+      return newStats;
+    });
   }
   
   const handleUploadError = (message) => {
@@ -117,7 +127,8 @@ function App() {
           <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col items-center">
               <div className="w-12 h-12 border-4 border-t-blue-600 border-gray-200 rounded-full animate-spin mb-4"></div>
-              <p className="text-gray-700 dark:text-gray-300">Processing with DeepSeek AI...</p>
+              <p className="text-gray-700 dark:text-gray-300 font-medium">Fast AI Processing...</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">This should only take a few seconds</p>
             </div>
           </div>
         )}
@@ -142,8 +153,8 @@ function App() {
           <div className="lg:col-span-8">
             <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 mb-6 hover:shadow-xl transition-shadow duration-300">
               <DocStats
-                aiGenerated={docStats.aiGenerated}
-                astGenerated={docStats.astGenerated}
+                documentsGenerated={docStats.documentsGenerated}
+                projectsAnalyzed={docStats.projectsAnalyzed}
                 totalFiles={docStats.totalFiles}
               />
             </div>

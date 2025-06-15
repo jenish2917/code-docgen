@@ -1,14 +1,18 @@
 ﻿# Make minimal necessary functions available at the package level
 
-# Import the API key, status check function, and documentation generator
+# Import the status check function and documentation generator
 try:
-    from .llm_integration import OPENROUTER_API_KEY, check_openrouter_api_status, generate_documentation_with_retry
-except ImportError:
-    # Fallback values if imports fail
-    OPENROUTER_API_KEY = None
+    from .llm_integration import (
+        check_system_status,
+        generate_documentation
+    )
+    print("✅ AI Documentation Generator with Qwen LLM integration active")
+except ImportError as e:
+    # Ultimate fallback values if imports fail
+    print(f"❌ LLM integration unavailable: {e}")
     
-    def check_openrouter_api_status():
-        return False
+    def check_system_status():
+        return {"status": "unavailable", "error": "Import failed"}
         
-    def generate_documentation_with_retry(code_content, filename):
-        return f"# Documentation for `{filename}`\n\nImport error occurred.", "error"
+    def generate_documentation(code_content, filename):
+        return f"# Documentation for `{filename}`\n\nImport error occurred.", False

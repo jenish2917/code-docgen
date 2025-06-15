@@ -6,7 +6,7 @@ CodeDocGen is a full-stack web application that allows users to upload source co
 
 - **Backend**: Django, Django REST Framework, django-cors-headers
 - **Frontend**: React + Vite, ReactMarkdown, Prism.js
-- **AI Integration**: DeepSeek AI via OpenRouter API
+- **AI Integration**: Local Ollama (Qwen 2.5 model) - Free and Open Source
 - **Other Tools**: Python `ast`, axios, PowerShell scripts
 
 ## 📁 Project Structure

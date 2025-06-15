@@ -6,11 +6,11 @@ import api from '../utils/api'
 import ThemeToggle from '../components/ThemeToggle'
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(null)  
   const [stats, setStats] = useState({
     filesProcessed: 0,
-    aiGenerated: 0,
-    astGenerated: 0
+    documentsGenerated: 0,
+    projectsAnalyzed: 0
   })
   const navigate = useNavigate()
 
@@ -30,14 +30,13 @@ export default function Dashboard() {
     fetchUserStats()
   }, [navigate])
 
-  const fetchUserStats = async () => {
-    try {
+  const fetchUserStats = async () => {    try {
       // In a real application, this would be an API call
       // For now we'll just simulate some data
       setStats({
         filesProcessed: 5,
-        aiGenerated: 3,
-        astGenerated: 2
+        documentsGenerated: 3,
+        projectsAnalyzed: 2
       })
     } catch (error) {
       console.error("Error fetching user statistics:", error)
@@ -89,7 +88,7 @@ export default function Dashboard() {
           >
             <Book className="w-12 h-12 text-green-600 dark:text-green-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">View Documentation</h3>
-            <p className="text-gray-600 dark:text-gray-300 mt-2">Browse through AI-generated documentation for your codebase</p>
+            <p className="text-gray-600 dark:text-gray-300 mt-2">Browse through generated documentation for your codebase</p>
           </button>
           
           <button 
@@ -152,14 +151,13 @@ export default function Dashboard() {
               <div className="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-lg flex-1">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Files Processed</p>
                 <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.filesProcessed}</p>
-              </div>
-              <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-lg flex-1">
-                <p className="text-sm text-gray-500 dark:text-gray-400">AI Generated</p>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.aiGenerated}</p>
+              </div>              <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-lg flex-1">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Documents Generated</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.documentsGenerated}</p>
               </div>
               <div className="bg-purple-100 dark:bg-purple-900/30 p-4 rounded-lg flex-1">
-                <p className="text-sm text-gray-500 dark:text-gray-400">AST Generated</p>
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.astGenerated}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Projects Analyzed</p>
+                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.projectsAnalyzed}</p>
               </div>
             </div>
           </div>

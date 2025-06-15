@@ -9,9 +9,6 @@ from django.contrib.auth import authenticate
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
-    """
-    Register a new user with username and password
-    """
     username = request.data.get('username')
     password = request.data.get('password')
     
@@ -36,9 +33,6 @@ def register(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_view(request):
-    """
-    Login user and return JWT token
-    """
     username = request.data.get('username')
     password = request.data.get('password')
     
@@ -49,15 +43,19 @@ def login_view(request):
         )
     
     user = authenticate(username=username, password=password)
+    
     if user:
         refresh = RefreshToken.for_user(user)
         return Response({
-            'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'username': user.username
+            'access': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username
+            }
         })
-    
-    return Response(
-        {'error': 'Invalid credentials'}, 
-        status=status.HTTP_401_UNAUTHORIZED
-    )
+    else:
+        return Response(
+            {'error': 'Invalid credentials'}, 
+            status=status.HTTP_401_UNAUTHORIZED
+        )
