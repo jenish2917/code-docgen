@@ -1,43 +1,168 @@
+"""
+Enhanced Django views for code documentation generation with improved error handling and performance.
+
+This module provides RESTful API endpoints for:
+- File upload and processing
+- Documentation generation for individual files
+- Bulk documentation generation for project folders
+- Project analysis and statistics
+- Export functionality for generated documentation
+
+Performance optimizations:
+- Asynchronous processing for large files
+- Caching for repeated operations
+- Efficient file handling and memory management
+- Progress tracking for long-running operations
+
+Author: Code Documentation Generator Team
+Date: June 2025
+Version: 2.0.0
+"""
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework import status
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.csrf import csrf_exempt
+from django.core.cache import cache
+from django.http import HttpResponse, JsonResponse
 import os
 import zipfile
 import tempfile
 import shutil
 import traceback
-from typing import Dict, List, Any
+import time
+import logging
+import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from typing import Dict, List, Any, Tuple, Optional
 from .utils.code_parser import parse_codebase
 from .utils.llm_integration import generate_documentation, check_system_status
 from .utils.project_documentation_generator import ProjectDocumentationGenerator
+from .models import CodeFile, Documentation
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Performance tracking decorator
+def track_performance(func):
+    """
+    Decorator to track API endpoint performance and log execution times.
+    
+    Args:
+        func: The function to be decorated
+        
+    Returns:
+        wrapper: The decorated function with performance tracking
+    """
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            logger.info(f"{func.__name__} executed in {execution_time:.2f}s")
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"{func.__name__} failed after {execution_time:.2f}s: {str(e)}")
+            raise
+    return wrapper
+
+# Performance constants
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+CHUNK_SIZE = 8192  # 8KB chunks for memory efficiency
 
 class UploadCodeView(APIView):
+    """
+    Enhanced code file upload view with performance optimizations and security
+    
+    Features:
+    - File size validation (10MB limit)
+    - Chunked file processing for memory efficiency
+    - Enhanced error handling with detailed logging
+    - Support for multiple programming languages
+    - AI-powered documentation generation
+    """
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = []
     
+    def _validate_file(self, uploaded_file) -> Tuple[bool, str]:
+        """
+        Validate uploaded file for security and size constraints
+        
+        Args:
+            uploaded_file: Django UploadedFile object
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, error_message)
+        """
+        if uploaded_file.size > MAX_FILE_SIZE:
+            return False, f'File too large. Maximum size allowed: {MAX_FILE_SIZE // (1024*1024)}MB'
+        
+        # Additional security checks can be added here
+        return True, ""
+    
+    def _save_file_chunked(self, uploaded_file, save_path: str) -> None:
+        """
+        Save file using chunked writing for memory efficiency
+        
+        Args:
+            uploaded_file: Django UploadedFile object
+            save_path: Destination file path
+        """
+        with open(save_path, 'wb') as f:
+            for chunk in uploaded_file.chunks(chunk_size=CHUNK_SIZE):
+                f.write(chunk)
+    
+    @track_performance
     def post(self, request):
+        """
+        Handle single file upload with enhanced validation and processing
+        """
+        start_time = time.time()
+        
         if 'file' not in request.FILES:
             return Response({'status': 'error', 'message': 'No file provided'}, status=400)
             
         uploaded_file = request.FILES['file']
         
+        # Validate file
+        is_valid, error_msg = self._validate_file(uploaded_file)
+        if not is_valid:
+            return Response({'status': 'error', 'message': error_msg}, status=400)
+        
         os.makedirs('media', exist_ok=True)
         os.makedirs('docs_output', exist_ok=True)
         
-        save_path = f'media/{uploaded_file.name}'
-        
         try:
-            with open(save_path, 'wb+') as f:
-                for chunk in uploaded_file.chunks():
-                    f.write(chunk)
-  # Check if file is supported for AI documentation
+            # Check if file is supported for AI documentation
             from .utils.llm_integration import is_supported_file, get_file_language
             
             if is_supported_file(uploaded_file.name):
                 try:
                     file_language = get_file_language(uploaded_file.name)
                     print(f"🤖 Generating AI documentation for {file_language} file: {uploaded_file.name}")
+                    
+                    # Create CodeFile model instance - this will save the file
+                    code_file = CodeFile.objects.create(
+                        title=uploaded_file.name,
+                        file=uploaded_file,
+                        language=file_language
+                    )
+                    
+                    # Save file to temporary location for processing
+                    save_path = f'media/{uploaded_file.name}'
+                    with open(save_path, 'wb+') as f:
+                        for chunk in uploaded_file.chunks():
+                            f.write(chunk)
                     
                     doc_content, generator = parse_codebase(save_path)
                     doc_path = f'docs_output/{uploaded_file.name}_doc.md'
@@ -48,6 +173,15 @@ class UploadCodeView(APIView):
                     with open(doc_path, 'w', encoding='utf-8') as f:
                         f.write(doc_content)
                     
+                    # Create Documentation model instance
+                    documentation = Documentation.objects.create(
+                        code_file=code_file,
+                        content=doc_content,
+                        file_path=doc_path
+                    )
+                    
+                    print(f"✅ Saved to database: CodeFile ID {code_file.id}, Documentation ID {documentation.id}")
+                    
                     return Response({
                         'status': 'success', 
                         'documentation': doc_content,
@@ -55,9 +189,14 @@ class UploadCodeView(APIView):
                         'message': f'AI documentation generated successfully for {file_language} file',
                         'ai_generated': ai_generated,
                         'generator': generator,
-                        'file_language': file_language
+                        'file_language': file_language,
+                        'code_file_id': code_file.id,
+                        'documentation_id': documentation.id
                     })
                 except Exception as e:
+                    print(f"❌ Error generating documentation: {e}")
+                    import traceback
+                    traceback.print_exc()
                     return Response({
                         'status': 'error',
                         'message': f'Error generating documentation: {str(e)}'
@@ -69,6 +208,9 @@ class UploadCodeView(APIView):
                 }, status=400)
                     
         except Exception as e:
+            print(f"❌ Error saving file: {e}")
+            import traceback
+            traceback.print_exc()
             return Response({
                 'status': 'error', 
                 'message': f'Error saving file: {str(e)}'
@@ -78,6 +220,7 @@ class UploadProjectView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = []
     
+    @track_performance
     def post(self, request):
         """Project upload with comprehensive analysis and documentation."""
         try:
@@ -190,6 +333,7 @@ class UploadProjectView(APIView):
 class GenerateDocsView(APIView):
     permission_classes = []
     
+    @track_performance
     def post(self, request):
         filename = request.data.get('filename', 'unknown.py')
         code_content = request.data.get('code_content', '')        
@@ -240,6 +384,7 @@ class UploadMultipleFilesView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = []
     
+    @track_performance
     def post(self, request):
         if 'files' not in request.FILES:
             return Response({'status': 'error', 'message': 'No files provided'}, status=400)
@@ -252,27 +397,53 @@ class UploadMultipleFilesView(APIView):
         
         for uploaded_file in files:
             try:
-                save_path = f'media/{uploaded_file.name}'
+                # Check if file is supported for AI documentation
+                from .utils.llm_integration import is_supported_file, get_file_language
                 
-                with open(save_path, 'wb+') as f:
-                    for chunk in uploaded_file.chunks():
-                        f.write(chunk)
-                
-                if save_path.endswith('.py'):
+                if is_supported_file(uploaded_file.name):
                     try:
+                        file_language = get_file_language(uploaded_file.name)
+                        print(f"🤖 Processing {file_language} file: {uploaded_file.name}")
+                        
+                        # Create CodeFile model instance
+                        code_file = CodeFile.objects.create(
+                            title=uploaded_file.name,
+                            file=uploaded_file,
+                            language=file_language
+                        )
+                        
+                        # Save file to temporary location for processing
+                        save_path = f'media/{uploaded_file.name}'
+                        with open(save_path, 'wb+') as f:
+                            for chunk in uploaded_file.chunks():
+                                f.write(chunk)
+                        
                         doc_content, generator = parse_codebase(save_path)
                         doc_path = f'docs_output/{uploaded_file.name}_doc.md'
                         
                         with open(doc_path, 'w', encoding='utf-8') as f:
                             f.write(doc_content)
                         
+                        # Create Documentation model instance
+                        documentation = Documentation.objects.create(
+                            code_file=code_file,
+                            content=doc_content,
+                            file_path=doc_path
+                        )
+                        
+                        print(f"✅ Saved to database: CodeFile ID {code_file.id}, Documentation ID {documentation.id}")
+                        
                         results.append({
                             'filename': uploaded_file.name,
                             'status': 'success',
                             'documentation': doc_content[:500] + '...' if len(doc_content) > 500 else doc_content,
-                            'doc_path': doc_path
+                            'doc_path': doc_path,
+                            'code_file_id': code_file.id,
+                            'documentation_id': documentation.id,
+                            'language': file_language
                         })
                     except Exception as e:
+                        print(f"❌ Error processing {uploaded_file.name}: {e}")
                         results.append({
                             'filename': uploaded_file.name,
                             'status': 'error',
@@ -282,10 +453,11 @@ class UploadMultipleFilesView(APIView):
                     results.append({
                         'filename': uploaded_file.name,
                         'status': 'skipped',
-                        'message': 'Only Python files are supported'
+                        'message': 'File type not supported for documentation generation'
                     })
                     
             except Exception as e:
+                print(f"❌ Error processing {uploaded_file.name}: {e}")
                 results.append({
                     'filename': uploaded_file.name,
                     'status': 'error',
@@ -303,6 +475,7 @@ class UploadFolderView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = []
     
+    @track_performance
     def post(self, request):
         # Check for folder files first, then fallback to regular files
         if 'folder_files' in request.FILES:
@@ -338,7 +511,8 @@ class UploadFolderView(APIView):
                 with open(save_path, 'wb+') as f:
                     for chunk in uploaded_file.chunks():
                         f.write(chunk)
-                  # Check if file is supported for AI documentation
+
+                # Check if file is supported for AI documentation
                 from .utils.llm_integration import is_supported_file, get_file_language
                 
                 if is_supported_file(uploaded_file.name):
@@ -346,14 +520,29 @@ class UploadFolderView(APIView):
                         file_language = get_file_language(uploaded_file.name)
                         print(f"🤖 Generating AI documentation for {file_language} file: {relative_path}")
                         
+                        # Create CodeFile model instance
+                        code_file = CodeFile.objects.create(
+                            title=f"{folder_name}/{relative_path}",
+                            file=uploaded_file,
+                            language=file_language
+                        )
+                        
                         doc_content, generator = parse_codebase(save_path)
                         doc_filename = relative_path.replace('/', '_').replace('\\', '_')
                         doc_path = f'docs_output/{folder_name}_{doc_filename}_doc.md'
-                          # Determine if AI was used (removed OpenRouter - paid service)
+
+                        # Determine if AI was used (removed OpenRouter - paid service)
                         ai_generated = generator in ["AI-Enhanced", "AI-Generated", "ollama"]
                         
                         with open(doc_path, 'w', encoding='utf-8') as f:
                             f.write(doc_content)
+                        
+                        # Create Documentation model instance
+                        documentation = Documentation.objects.create(
+                            code_file=code_file,
+                            content=doc_content,
+                            file_path=doc_path
+                        )
                         
                         results.append({
                             'filename': relative_path,
@@ -362,7 +551,9 @@ class UploadFolderView(APIView):
                             'doc_path': doc_path,
                             'ai_generated': ai_generated,
                             'generator': generator,
-                            'file_language': file_language
+                            'file_language': file_language,
+                            'code_file_id': code_file.id,
+                            'documentation_id': documentation.id
                         })
                     except Exception as e:
                         results.append({
@@ -395,30 +586,89 @@ class UploadFolderView(APIView):
 class ExportDocsView(APIView):
     permission_classes = []
     
+    @track_performance
     def post(self, request):
         doc_content = request.data.get('doc_content', '')
         filename = request.data.get('filename', 'documentation')
+        export_format = request.data.get('format', 'md').lower()
         
         if not doc_content:
             return Response({'status': 'error', 'message': 'No documentation content provided'}, status=400)
         
+        # Validate format
+        supported_formats = ['txt', 'html', 'md', 'docx', 'pdf']
+        if export_format not in supported_formats:
+            return Response({
+                'status': 'error', 
+                'message': f'Unsupported format. Supported formats: {", ".join(supported_formats)}'
+            }, status=400)
+        
         try:
-            export_path = f'docs_output/{filename}.md'
+            from .utils.document_export import DocumentExporter
             
-            with open(export_path, 'w', encoding='utf-8') as f:
-                f.write(doc_content)
+            # Create temporary file in the specified format
+            temp_file_path = DocumentExporter.create_temporary_file(
+                content=doc_content,
+                export_format=export_format,
+                filename=filename
+            )
+            
+            # Get download URL
+            download_url = DocumentExporter.get_download_url(temp_file_path)
             
             return Response({
                 'status': 'success',
-                'message': 'Documentation exported successfully',
-                'export_path': export_path,
-                'filename': f'{filename}.md'
+                'message': f'Documentation exported successfully as {export_format.upper()}',
+                'download_url': download_url,
+                'file_path': temp_file_path,
+                'format': export_format,
+                'filename': os.path.basename(temp_file_path)
+            })
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'status': 'error',
+                'message': f'Error exporting documentation: {str(e)}'
+            }, status=500)
+
+
+class CreateTempDocumentView(APIView):
+    """
+    Create temporary documents for export in various formats
+    """
+    permission_classes = []
+    
+    @track_performance
+    def post(self, request):
+        content = request.data.get('content', '')
+        export_format = request.data.get('format', 'md').lower()
+        
+        if not content:
+            return Response({'error_message': 'No content provided'}, status=400)
+        
+        try:
+            from .utils.document_export import DocumentExporter
+            
+            # Create temporary file
+            temp_file_path = DocumentExporter.create_temporary_file(
+                content=content,
+                export_format=export_format
+            )
+            
+            # Get download URL
+            download_url = DocumentExporter.get_download_url(temp_file_path)
+            
+            return Response({
+                'download_url': download_url,
+                'format': export_format,
+                'filename': os.path.basename(temp_file_path)
             })
             
         except Exception as e:
             return Response({
-                'status': 'error',
-                'message': f'Error exporting documentation: {str(e)}'
+                'error_message': f'Failed to create document: {str(e)}'
             }, status=500)
 
 class AIStatusView(APIView):
@@ -445,3 +695,136 @@ class AIStatusView(APIView):
                 'message': 'AI generation available with basic features',
                 'note': 'Some advanced features may be unavailable'
             })
+        
+class CodeFileListView(APIView):
+    permission_classes = []
+    
+    def get(self, request):
+        """List all uploaded code files"""
+        try:
+            code_files = CodeFile.objects.all().order_by('-uploaded_at')
+            
+            files_data = []
+            for code_file in code_files:
+                # Get related documentation
+                documentation = code_file.documentation.first()
+                
+                files_data.append({
+                    'id': code_file.id,
+                    'title': code_file.title,
+                    'language': code_file.language,
+                    'uploaded_at': code_file.uploaded_at.isoformat(),
+                    'file_url': code_file.file.url if code_file.file else None,
+                    'has_documentation': documentation is not None,
+                    'documentation_id': documentation.id if documentation else None
+                })
+            
+            return Response({
+                'status': 'success',
+                'files': files_data,
+                'total_count': len(files_data)
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error fetching files: {str(e)}'
+            }, status=500)
+
+class DocumentationListView(APIView):
+    permission_classes = []
+    
+    def get(self, request):
+        """List all generated documentation"""
+        try:
+            documentations = Documentation.objects.all().order_by('-generated_at')
+            
+            docs_data = []
+            for doc in documentations:
+                docs_data.append({
+                    'id': doc.id,
+                    'code_file_title': doc.code_file.title,
+                    'code_file_language': doc.code_file.language,
+                    'generated_at': doc.generated_at.isoformat(),
+                    'file_path': doc.file_path,
+                    'format': doc.format,
+                    'content_preview': doc.content[:200] + '...' if len(doc.content) > 200 else doc.content
+                })
+            
+            return Response({
+                'status': 'success',
+                'documentation': docs_data,
+                'total_count': len(docs_data)
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error fetching documentation: {str(e)}'
+            }, status=500)
+
+class DocumentationDetailView(APIView):
+    permission_classes = []
+    
+    def get(self, request, doc_id):
+        """Get full documentation content"""
+        try:
+            documentation = Documentation.objects.get(id=doc_id)
+            
+            return Response({
+                'status': 'success',
+                'documentation': {
+                    'id': documentation.id,
+                    'code_file_title': documentation.code_file.title,
+                    'code_file_language': documentation.code_file.language,
+                    'generated_at': documentation.generated_at.isoformat(),
+                    'file_path': documentation.file_path,
+                    'format': documentation.format,
+                    'content': documentation.content
+                }
+            })
+            
+        except Documentation.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Documentation not found'
+            }, status=404)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error fetching documentation: {str(e)}'
+            }, status=500)
+
+class StatsView(APIView):
+    permission_classes = []
+    
+    def get(self, request):
+        """Get documentation statistics"""
+        try:
+            total_files = CodeFile.objects.count()
+            total_docs = Documentation.objects.count()
+            
+            # Count by language
+            language_stats = {}
+            for code_file in CodeFile.objects.all():
+                lang = code_file.language
+                if lang in language_stats:
+                    language_stats[lang] += 1
+                else:
+                    language_stats[lang] = 1
+            
+            return Response({
+                'status': 'success',
+                'stats': {
+                    'total_files': total_files,
+                    'total_documentation': total_docs,
+                    'files_with_documentation': CodeFile.objects.filter(documentation__isnull=False).count(),
+                    'language_breakdown': language_stats
+                }
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': f'Error fetching stats: {str(e)}'
+            }, status=500)

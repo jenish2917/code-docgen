@@ -71,15 +71,16 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Test files and folders
+# Test and debug files
 test_*.py
+test_*.js
+test_*.ts
+test_*.css
 *_test.py
-tests/
-test_files/
-test_data/
-sample_*.py
-demo_*.py
-example_*.py
+debug_*.py
+diagnostic_*.py
+*_diagnostic.py
+cleanup_*.py
 
 # Logs and debugging
 *.log
@@ -152,3 +153,16 @@ test_advanced_*.py
 execute_*.py
 final_*.py
 demo_project_*.py
+
+# AI/ML related temporary files
+*HALLUCINATION*.md
+*SUCCESS*.md
+*SUMMARY*.md
+AI_*.md
+
+# Media uploads (keep structure but ignore content)
+media/uploaded_folder/
+media/test_project_folder/
+media/temp/
+media/folders/*/
+media/code_files/*/

@@ -8,7 +8,12 @@ from core.views import (
     UploadFolderView,
     GenerateDocsView,
     ExportDocsView,
-    AIStatusView
+    CreateTempDocumentView,
+    AIStatusView,
+    CodeFileListView,
+    DocumentationListView,
+    DocumentationDetailView,
+    StatsView
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -21,7 +26,12 @@ urlpatterns = [
     path('api/upload-folder/', UploadFolderView.as_view()),
     path('api/generate-docs/', GenerateDocsView.as_view()),
     path('api/export-docs/', ExportDocsView.as_view()),
+    path('api/export-docs/create-temp/', CreateTempDocumentView.as_view()),
     path('api/ai-status/', AIStatusView.as_view()),
+    path('api/files/', CodeFileListView.as_view()),
+    path('api/documentation/', DocumentationListView.as_view()),
+    path('api/documentation/<int:doc_id>/', DocumentationDetailView.as_view()),
+    path('api/stats/', StatsView.as_view()),
     path('api/auth/', include('authentication.urls')),
 ]
 

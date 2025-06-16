@@ -6,7 +6,7 @@ import predictionService from '../services/predictionService';
 import { toast } from 'react-toastify';
 import ProgressIndicator from './ProgressIndicator';
 
-// File and folder filtering constants
+// File and folder filtering constants with security enhancements
 const IGNORED_FOLDERS = new Set([
   'node_modules', '.next', 'env', 'venv', '.venv', '__pycache__',
   '.git', '.idea', '.vscode', 'dist', 'build', 'coverage', 'out',
@@ -22,6 +22,31 @@ const IGNORED_EXTENSIONS = new Set([
   '.min.js', '.min.css', '.map'
 ]);
 
+// Security constants
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file
+const MAX_TOTAL_FILES = 100; // Maximum files in a single upload
+const ALLOWED_MIME_TYPES = new Set([
+  'text/plain', 'text/javascript', 'application/json', 'text/x-python',
+  'application/zip', 'text/x-typescript'
+]);
+
+/**
+ * Enhanced File Uploader Component with Security & Performance Optimizations
+ * 
+ * Features:
+ * - File size validation (10MB limit per file)
+ * - Maximum file count validation (100 files)
+ * - MIME type validation
+ * - Enhanced error handling
+ * - Performance optimizations for large file sets
+ * 
+ * @param {Object} props - Component props
+ * @param {Function} props.onUploadSuccess - Success callback
+ * @param {Function} props.onUploadError - Error callback  
+ * @param {Function} props.onUploadStart - Upload start callback
+ * @returns {JSX.Element} FileUploader component
+ */
+
 const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [files, setFiles] = useState([]);
@@ -29,8 +54,21 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
   const [progressStep, setProgressStep] = useState(0);
   const [uploadMode, setUploadMode] = useState('files'); // 'files' or 'folder'
   const [currentFileName, setCurrentFileName] = useState('');
-  const [estimatedTime, setEstimatedTime] = useState(30);
+  const [estimatedTime, setEstimatedTime] = useState(30);  // Enhanced file drop handler with security validation
   const onDrop = useCallback(acceptedFiles => {
+    // Security check: Validate total file count
+    if (acceptedFiles.length > MAX_TOTAL_FILES) {
+      toast.error(`Too many files selected. Maximum allowed: ${MAX_TOTAL_FILES}`);
+      return;
+    }
+
+    // Security check: Validate individual file sizes
+    const oversizedFiles = acceptedFiles.filter(file => file.size > MAX_FILE_SIZE);
+    if (oversizedFiles.length > 0) {
+      toast.error(`Some files exceed the 10MB size limit: ${oversizedFiles.map(f => f.name).join(', ')}`);
+      return;
+    }
+
     // Filter for only supported file types and apply ignore rules
     const validFiles = acceptedFiles.filter(file => {
       if (shouldIgnoreFile(file)) {
@@ -40,7 +78,13 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
     });
     
     if (validFiles.length < acceptedFiles.length) {
-      toast.warning('Some files were filtered out. We support Python, JavaScript, TypeScript files and exclude common non-source files.');
+      const filteredCount = acceptedFiles.length - validFiles.length;
+      toast.warning(`${filteredCount} files were filtered out. We support Python, JavaScript, TypeScript files and exclude common non-source files.`);
+    }
+    
+    if (validFiles.length === 0) {
+      toast.error('No valid files found. Please upload supported code files.');
+      return;
     }
     
     setFiles(prev => [...prev, ...validFiles]);

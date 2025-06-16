@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ToastContainer } from 'react-toastify'
 import FileUploader from './components/FileUploader'
@@ -9,9 +9,21 @@ import ThemeToggle from './components/ThemeToggle'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
+import DocumentationView from './pages/DocumentationView'
 import AuthService from './utils/auth'
 import 'react-toastify/dist/ReactToastify.css'
 
+/**
+ * Main Application Component
+ * 
+ * Features:
+ * - Optimized state management with useCallback
+ * - Performance improvements with useMemo
+ * - Enhanced error handling
+ * - Statistics tracking
+ * 
+ * @returns {JSX.Element} Main application layout
+ */
 function App() {
   const [docs, setDocs] = useState("")
   const [error, setError] = useState(null)
@@ -23,7 +35,11 @@ function App() {
     totalFiles: 0
   })
 
-  const handleUploadSuccess = (data) => {
+  // Memoized stats to prevent unnecessary re-renders
+  const memoizedStats = useMemo(() => docStats, [docStats])
+
+  // Optimized upload success handler with useCallback and better error handling
+  const handleUploadSuccess = useCallback((data) => {
     console.log("Upload success data:", data); // Debug log
     setError(null)
     setDocs(data.documentation || data.doc || "")
@@ -34,15 +50,20 @@ function App() {
     console.log("Set docs:", data.documentation || data.doc || "");
     console.log("Set generator:", data.generator || "AI-Generated");
     
-    // Update statistics - always update for successful uploads
+    // Performance optimization: Batch state updates to prevent unnecessary re-renders
     setDocStats(prevStats => {
       const newStats = { ...prevStats };
       
-      // Handle different response types
+      // Handle different response types with better type checking
       if (data.status === 'success') {
         // Single file processing (most common case)
         newStats.totalFiles += 1;
         newStats.documentsGenerated += 1;
+        
+        // Performance tracking: Log cache hits for optimization insights
+        if (data.cache_hit) {
+          console.log("⚡ Cache hit - improved response time");
+        }
         
         console.log("Updated stats:", newStats); // Debug log
       } else if (data.generator === 'multiple' || data.generator === 'folder') {
@@ -54,16 +75,18 @@ function App() {
       
       return newStats;
     });
-  }
+  }, [])
   
-  const handleUploadError = (message) => {
+  // Optimized error handler with useCallback
+  const handleUploadError = useCallback((message) => {
     setError(message)
     setIsLoading(false)
-  }
+  }, [])
   
-  const handleUploadStart = () => {
+  // Optimized upload start handler with useCallback
+  const handleUploadStart = useCallback(() => {
     setIsLoading(true)
-  }
+  }, [])
 
   const isAuthenticated = () => {
     return AuthService.isLoggedIn();
@@ -222,6 +245,11 @@ function App() {
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/documentation/:docId" element={
+          <ProtectedRoute>
+            <DocumentationView />
           </ProtectedRoute>
         } />
         <Route path="/" element={
