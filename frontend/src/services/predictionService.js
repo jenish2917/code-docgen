@@ -10,16 +10,11 @@ const predictionService = {
      * @param {File} file - The file to upload
      * @param {boolean} isZip - Whether the file is a zip archive
      * @returns {Promise} - Promise with the API response
-     */    uploadFile: async (file, isZip = false) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const endpoint = isZip ? '/api/upload-project/' : '/api/upload/';
-        
-        try {
-            // First try with a direct fetch to make sure connection is working
-            const testResponse = await fetch('/api/ai-status/');
-            if (!testResponse.ok) {
+     */    uploadFile: async (file, isZip = false) => {        const formData = new FormData();
+        formData.append('file', file);        const endpoint = isZip ? '/upload-project/' : '/upload/';        try {
+            // First try with an API call to make sure connection is working
+            const testResponse = await api.get('/ai-status/');
+            if (!testResponse.status === 200) {
                 console.error('API status check failed before upload');
                 throw new Error('Server connection test failed');
             } else {
@@ -39,22 +34,19 @@ const predictionService = {
             console.error('Error in uploadFile:', error);
             throw error;
         }
-    },
-
-    /**
+    },    /**
      * Get documentation statistics
      * @returns {Promise} - Promise with the API response
-     */
-    getStats: async () => {
-        return api.get('/api/stats/');
-    },    /**
+     */    getStats: async () => {
+        return api.get('/stats/');
+    },/**
      * Export documentation to specified format
      * @param {string} content - The content to export
      * @param {string} format - The format to export to (pdf, docx)
      * @returns {Promise} - Promise with the API response
      */
     exportDocumentation: async (content, format) => {
-        return api.post('/api/export-docs/create-temp/', {
+        return api.post('/export-docs/create-temp/', {
             content,
             format
         });
@@ -70,9 +62,8 @@ const predictionService = {
         files.forEach((file, index) => {
             formData.append(`files`, file);
         });
-        
-        try {
-            return api.post('/api/upload-multiple/', formData, {
+          try {
+            return api.post('/upload-multiple/', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },                onUploadProgress: (progressEvent) => {
@@ -100,10 +91,8 @@ const predictionService = {
             formData.append('folder_files', file);
             // Also send the relative path information
             formData.append('file_paths', file.webkitRelativePath || file.name);
-        });
-        
-        try {
-            return api.post('/api/upload-folder/', formData, {
+        });        try {
+            return api.post('/upload-folder/', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },                onUploadProgress: (progressEvent) => {
@@ -116,14 +105,11 @@ const predictionService = {
             console.error('Error in uploadFolder:', error);
             throw error;
         }
-    },
-
-    /**
-     * Get AI integration status
+    },    /**     * Get AI integration status
      * @returns {Promise} - Promise with the API response
      */
     getAIStatus: async () => {
-        return api.get('/api/ai-status/');
+        return api.get('/ai-status/');
     }
 };
 

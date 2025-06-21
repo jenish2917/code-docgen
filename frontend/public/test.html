@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+    </style>
+</head>
+<body>
+    <h1>App Test Page</h1>
+    <p>If you can see this page, the server is working correctly.</p>
+    
+    <div id="test-component"></div>
+    
+    <script type="module">
+        // Simple React-like test to verify the environment
+        console.log("Test script running");
+        
+        const div = document.getElementById('test-component');
+        div.innerHTML = "<p>JavaScript is working correctly. Current time: " + new Date().toLocaleTimeString() + "</p>";
+    </script>
+</body>
+</html>

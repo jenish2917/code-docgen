@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -90,9 +91,10 @@ class UploadCodeView(APIView):
     - Enhanced error handling with detailed logging
     - Support for multiple programming languages
     - AI-powered documentation generation
+    - Authentication required for document generation
     """
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     def _validate_file(self, uploaded_file) -> Tuple[bool, str]:
         """
@@ -218,7 +220,7 @@ class UploadCodeView(APIView):
 
 class UploadProjectView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     @track_performance
     def post(self, request):
@@ -331,7 +333,7 @@ class UploadProjectView(APIView):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 class GenerateDocsView(APIView):
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     @track_performance
     def post(self, request):
@@ -382,7 +384,7 @@ class GenerateDocsView(APIView):
 
 class UploadMultipleFilesView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     @track_performance
     def post(self, request):
@@ -473,7 +475,7 @@ class UploadMultipleFilesView(APIView):
 
 class UploadFolderView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     @track_performance
     def post(self, request):
@@ -584,7 +586,7 @@ class UploadFolderView(APIView):
         })
 
 class ExportDocsView(APIView):
-    permission_classes = []
+    permission_classes = [IsAuthenticated]  # Require login for document generation
     
     @track_performance
     def post(self, request):
@@ -697,7 +699,7 @@ class AIStatusView(APIView):
             })
         
 class CodeFileListView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]  # Allow viewing without login
     
     def get(self, request):
         """List all uploaded code files"""
@@ -732,7 +734,7 @@ class CodeFileListView(APIView):
             }, status=500)
 
 class DocumentationListView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]  # Allow viewing without login
     
     def get(self, request):
         """List all generated documentation"""
@@ -764,7 +766,7 @@ class DocumentationListView(APIView):
             }, status=500)
 
 class DocumentationDetailView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]  # Allow viewing without login
     
     def get(self, request, doc_id):
         """Get full documentation content"""
@@ -796,7 +798,7 @@ class DocumentationDetailView(APIView):
             }, status=500)
 
 class StatsView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]  # Allow viewing stats without login
     
     def get(self, request):
         """Get documentation statistics"""

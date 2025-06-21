@@ -1,4 +1,6 @@
 
+import api from './api';
+
 /**
  * Advanced utility functions for converting documentation between different formats
  * Integrates with backend for server-side conversion of complex formats
@@ -271,22 +273,12 @@ export const wrapInHtmlDocument = (htmlContent, title = 'Generated Documentation
  */
 export const exportWithBackend = async (content, format, filename = 'documentation') => {
   try {
-    const response = await fetch('/api/export-docs/create-temp/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: content,
-        format: format
-      })
+    // Use the api instance with the correct baseURL
+    const response = await api.post('/export-docs/create-temp/', {      content: content,
+      format: format
     });
     
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}`);
-    }
-    
-    const data = await response.json();
+    const data = response.data;
     
     if (data.download_url) {
       // Create download link and trigger download

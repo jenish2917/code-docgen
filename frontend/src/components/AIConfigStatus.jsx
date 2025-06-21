@@ -7,17 +7,12 @@ const AIConfigStatus = () => {
   const [error, setError] = useState(null);
   
   useEffect(() => {
-    const fetchAIStatus = async () => {
-      try {        
-        setIsLoading(true);
+    const fetchAIStatus = async () => {      try {        setIsLoading(true);
         setError(null);
         
-        console.log('Fetching AI status from backend...');
-        
         // Simple, direct API call using the configured axios instance
-        const response = await api.get('/api/ai-status/');
+        const response = await api.get('/ai-status/');
         
-        console.log('AI status received:', response.data);
         setAiStatus(response.data);
         
       } catch (err) {

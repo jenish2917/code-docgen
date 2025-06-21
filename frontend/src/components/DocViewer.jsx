@@ -26,23 +26,17 @@ const DocViewer = ({ content, generator, isLoading: externalIsLoading }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-  if (externalIsLoading || isLoading) {
+  };  if (externalIsLoading || isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-pulse">Loading documentation...</div>
       </div>
     );
   }
-    if (!content) {
-    return (
-      <div className="flex flex-col justify-center items-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 dark:text-gray-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <p className="text-gray-500 dark:text-gray-400 font-medium">Upload a code file to see documentation here</p>
-      </div>
-    );
+  
+  // No longer showing the placeholder since we're using SampleDocumentation instead
+  if (!content) {
+    return null;
   }
   // Custom renderers for markdown with improved styling and hierarchy
   const components = {

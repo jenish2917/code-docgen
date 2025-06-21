@@ -98,6 +98,3 @@ npm run dev
 - Project-level documentation generation
 - Customizable documentation templates
 
-## 📝 License
-
-[MIT](https://opensource.org/licenses/MIT)

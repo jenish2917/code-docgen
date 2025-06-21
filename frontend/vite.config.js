@@ -5,24 +5,26 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3004, // Updated to match current server port
+    port: 3005, // Updated to the actual port being used
+    strictPort: false, // Allow fallback to another port if 3005 is in use
     cors: true, // Enable CORS for development server
-    hmr: { overlay: false }, // Disable HMR overlay for cleaner debugging
+    hmr: { overlay: true }, // Enable HMR overlay for better error visibility
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
+        // Don't modify the /api prefix as the Django server expects it
         rewrite: (path) => path,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
-            console.log('proxy error', err);
+            console.error('Proxy Error:', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log('Sending Request to the Target:', req.method, req.url);
+            console.log(`Proxying Request: ${req.method} ${req.url} -> ${proxyReq.path}`);
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+            console.log(`Proxy Response: ${proxyRes.statusCode} for ${req.url}`);
           });
         }
       },

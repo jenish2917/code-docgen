@@ -5,6 +5,7 @@ import api from '../utils/api';
 import predictionService from '../services/predictionService';
 import { toast } from 'react-toastify';
 import ProgressIndicator from './ProgressIndicator';
+import AuthService from '../utils/auth';
 
 // File and folder filtering constants with security enhancements
 const IGNORED_FOLDERS = new Set([
@@ -54,8 +55,21 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
   const [progressStep, setProgressStep] = useState(0);
   const [uploadMode, setUploadMode] = useState('files'); // 'files' or 'folder'
   const [currentFileName, setCurrentFileName] = useState('');
-  const [estimatedTime, setEstimatedTime] = useState(30);  // Enhanced file drop handler with security validation
+  const [estimatedTime, setEstimatedTime] = useState(30);
+  
+  // Check if user is authenticated (only once)
+  const isAuthenticated = AuthService.isLoggedIn();
   const onDrop = useCallback(acceptedFiles => {
+    // Security check: Check if user is authenticated
+    if (!isAuthenticated) {
+      toast.info("You need to be logged in to upload files. Redirecting to login page...");
+      // Redirect to login page after a short delay
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 1500);
+      return;
+    }
+    
     // Security check: Validate total file count
     if (acceptedFiles.length > MAX_TOTAL_FILES) {
       toast.error(`Too many files selected. Maximum allowed: ${MAX_TOTAL_FILES}`);
@@ -88,7 +102,8 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
     }
     
     setFiles(prev => [...prev, ...validFiles]);
-  }, []);
+  }, [isAuthenticated]);
+
   // Helper function to check if a file should be ignored
   const shouldIgnoreFile = (file) => {
     const relativePath = file.webkitRelativePath || file.name;
@@ -123,9 +138,19 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
            fileName.endsWith('.jsx') || fileName.endsWith('.ts') || 
            fileName.endsWith('.tsx') || fileName.endsWith('.zip');
   };
-
   // Handle folder selection
   const handleFolderSelect = async (event) => {
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      // Show a toast notification
+      toast.info("You need to be logged in to upload files. Redirecting to login page...");
+      // Redirect to login page after a short delay
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 1500);
+      return;
+    }
+    
     const allFiles = Array.from(event.target.files);
     
     // Filter out ignored files and folders
@@ -158,6 +183,7 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
     setFiles(supportedFiles);
     setUploadMode('folder');
   };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -168,13 +194,26 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
     },
     noClick: uploadMode === 'folder' // Disable click when in folder mode
   });
-    const removeFile = (index) => {
+  const removeFile = (index) => {
     setFiles(files => files.filter((_, i) => i !== index));
     // Reset upload mode if no files left
     if (files.length === 1) {
       setUploadMode('files');
     }
-  };  const handleUpload = async () => {
+  };
+  
+  const handleUpload = async () => {
+    // Double check authentication status
+    if (!isAuthenticated) {
+      // Show a toast notification
+      toast.info("You need to be logged in to upload files. Redirecting to login page...");
+      // Redirect to login page after a short delay
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 1500);
+      return;
+    }
+    
     if (files.length === 0) {
       onUploadError("Please select files first");
       return;
@@ -197,7 +236,7 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
         console.log("Folder upload success response:", response.data);
         toast.success(`Successfully processed ${files.length} files from folder!`);
         onUploadSuccess(response.data);
-          } else if (files.length === 1) {
+      } else if (files.length === 1) {
         // Single file upload
         const file = files[0];
         const isZip = file.name.endsWith('.zip');
@@ -214,25 +253,20 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
         
         // Check for partial success status (when documentation was generated with errors)
         if (response.data.status === 'partial_success') {
-          console.log("Partial success - documentation had errors but was generated");
-          toast.info("Documentation generated with some errors");
           onUploadSuccess(response.data);
+          toast.warning('Documentation generated with some warnings or issues.');
         } else {
           onUploadSuccess(response.data);
         }
-          } else {
+      } else {
         // Handle multiple individual files
         console.log("Processing multiple individual files");
         setCurrentFileName(`${files.length} files`);
         setEstimatedTime(Math.min(files.length * 12, 60)); // 12s per file, max 1 minute
-        setUploadProgress(`Processing ${files.length} files...`);
         
         const response = await predictionService.uploadMultipleFiles(files);
-        
-        toast.success(`Successfully processed ${files.length} files!`);
         onUploadSuccess(response.data);
-      }
-      
+      }      
     } catch (error) {
       console.error("Upload error details:", error);
       const errorMessage = error.response?.data?.error_message || 
@@ -243,35 +277,26 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
       
       if (error.response) {
         console.error("Server error response:", error.response.data);
-        onUploadError(`Server error: ${error.response.status} - ${errorMessage}`);
-      } else if (error.request) {
-        console.error("No response received:", error.request);
-        fetch('http://localhost:8000/api/ai-status/')
-          .then(response => {
-            if (response.ok) {
-              onUploadError("Server is running but the upload request failed. Try again or use smaller files.");
-            } else {
-              onUploadError("No response from server. Please check if the backend server is running.");
-            }
-          })
-          .catch(() => {
-            onUploadError("No response from server. Please check if the backend server is running.");
-          });
-      } else {
-        console.error("Request setup error:", error.message);
-        onUploadError(`Error: ${error.message}`);
+      }
+      
+      if (onUploadError) {
+        onUploadError(errorMessage);
       }
     } finally {
       setIsUploading(false);
+      setProgressStep(0);
       setUploadProgress('');
     }
-  };    return (
+  };
+  
+  // We'll handle authentication check during upload actions instead of showing a login prompt
+  return (
     <div className="w-full">
       {/* Upload mode selector */}
       <div className="mb-4 flex justify-center">
         <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-1 bg-gray-100 dark:bg-gray-800">
           <button
-            onClick={() => {setUploadMode('files'); setFiles([]);}}
+            onClick={() => {setUploadMode('files'); setFiles([])}}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
               uploadMode === 'files'
                 ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
@@ -282,7 +307,7 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
             Individual Files
           </button>
           <button
-            onClick={() => {setUploadMode('folder'); setFiles([]);}}
+            onClick={() => {setUploadMode('folder'); setFiles([])}}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
               uploadMode === 'folder'
                 ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
@@ -319,138 +344,113 @@ const FileUploader = ({ onUploadSuccess, onUploadError, onUploadStart }) => {
                 </p>
               </>
             )}
-            <button className="mt-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 shadow-sm hover:shadow flex items-center gap-2 justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-file-plus">
-                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="12" x2="12" y1="18" y2="12"/>
-                <line x1="9" x2="15" y1="15" y2="15"/>
-              </svg>
-              Select Files
-            </button>
           </div>
         </div>
-      ) : (        // Folder selection area
-        <div className="border-2 border-dashed border-purple-300 dark:border-purple-600 rounded-lg p-6 text-center bg-purple-50 dark:bg-purple-900/20">
+      ) : (
+        // Folder selection
+        <div className="border-2 border-dashed rounded-lg p-6 text-center transition-all">
           <div className="flex flex-col items-center justify-center gap-3">
-            <FolderOpen className="w-12 h-12 text-purple-600 dark:text-purple-400" />
-            <p className="text-purple-600 dark:text-purple-400 font-medium">
-              Select an entire folder to process all code files
+            <FolderOpen className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+            <p className="text-gray-500 dark:text-gray-400">
+              Select a folder containing code files
             </p>
-            <p className="text-sm text-purple-500 dark:text-purple-400">
-              Will process all .py, .js, .jsx, .ts, .tsx files in the folder
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              We'll recursively process all compatible files
             </p>
-            <div className="bg-purple-100 dark:bg-purple-800/30 border border-purple-200 dark:border-purple-700 rounded-md p-3 mt-2">
-              <p className="text-xs text-purple-700 dark:text-purple-300 mb-1">
-                <strong>🚀 Smart Filtering:</strong> Automatically ignores
-              </p>
-              <p className="text-xs text-purple-600 dark:text-purple-400">
-                node_modules, .git, build files, media files, and other non-source files
-              </p>
-            </div>
-            <label className="mt-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-md transition-colors cursor-pointer focus-within:outline-none focus-within:ring-2 focus-within:ring-purple-400 dark:focus-within:ring-purple-600 shadow-sm hover:shadow flex items-center gap-2 justify-center">
-              <FolderOpen className="w-4 h-4" />
+            <input
+              type="file"
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={handleFolderSelect}
+              className="hidden"
+              id="folder-input"
+            />
+            <label
+              htmlFor="folder-input"
+              className="mt-2 px-4 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700"
+            >
               Select Folder
-              <input
-                type="file"
-                directory=""
-                webkitdirectory=""
-                multiple
-                onChange={handleFolderSelect}
-                className="hidden"
-              />
             </label>
           </div>
         </div>
-      )}      {files.length > 0 && (
-        <div className="mt-4">
-          <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-            {uploadMode === 'folder' ? (
-              <>
-                <Folder className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                Folder Files ({files.length})
-              </>
-            ) : (
-              <>
-                <File className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                Selected Files ({files.length})
-              </>
-            )}
-          </h4>
-          <div className="space-y-2 max-h-52 overflow-y-auto">
-            {files.map((file, index) => (
-              <div 
-                key={`${file.name}-${index}`} 
-                className={`flex items-center justify-between p-2 rounded-lg ${
-                  uploadMode === 'folder' 
-                    ? 'bg-purple-100 dark:bg-purple-900/30' 
-                    : 'bg-gray-100 dark:bg-gray-800/80'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <File className={`w-4 h-4 ${
-                    uploadMode === 'folder' 
-                      ? 'text-purple-500 dark:text-purple-400' 
-                      : 'text-gray-500 dark:text-gray-400'
-                  }`} />
-                  <span className="text-sm text-gray-700 dark:text-gray-300 truncate max-w-[200px]">
-                    {file.webkitRelativePath || file.name}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    ({(file.size / 1024).toFixed(2)} KB)
-                  </span>
-                </div>
-                <button 
-                  onClick={() => removeFile(index)} 
-                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
-                  aria-label="Remove file"
+      )}
+
+      {/* File list */}
+      {files.length > 0 && (
+        <div className="mt-6">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Selected Files ({files.length})
+            </h3>
+            <button
+              onClick={() => setFiles([])}
+              className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+            >
+              Clear All
+            </button>
+          </div>
+          
+          <div className="max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+            {files.slice(0, 5).map((file, index) => (
+              <div key={index} className="flex justify-between items-center p-2 text-sm">
+                <span className="truncate max-w-xs text-gray-700 dark:text-gray-300">
+                  {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                </span>
+                <button
+                  onClick={() => removeFile(index)}
+                  className="text-gray-500 hover:text-red-600 dark:hover:text-red-400"
                 >
-                  <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
+            {files.length > 5 && (
+              <div className="p-2 text-sm text-gray-500 dark:text-gray-400 text-center">
+                ...and {files.length - 5} more files
+              </div>
+            )}
           </div>
         </div>
-      )}      {/* Beautiful Progress Indicator */}
-      <ProgressIndicator 
-        isVisible={isUploading}
-        fileName={currentFileName}
-        estimatedTime={estimatedTime}
-      /><div className="mt-4 flex justify-center">        <button 
-          onClick={handleUpload}
-          disabled={isUploading || files.length === 0}
-          className={`flex items-center gap-2 py-2 px-4 rounded-md transition-all ${
-            uploadMode === 'folder'
-              ? (isUploading 
-                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                  : 'bg-purple-500 hover:bg-purple-600 text-white hover:scale-[1.02]')
-              : (isUploading 
-                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                  : 'bg-green-500 hover:bg-green-600 text-white hover:scale-[1.02]')
-          }`}
-        >
-          {isUploading ? (
-            <>
-              <div className="w-5 h-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              <span>{uploadMode === 'folder' ? 'Processing Folder...' : 'Processing Files...'}</span>
-            </>
-          ) : (
-            <>
-              {uploadMode === 'folder' ? (
-                <>
-                  <FolderOpen className="w-5 h-5" />
-                  <span>Process Folder ({files.length} files)</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-5 h-5" />
-                  <span>Upload for Documentation</span>
-                </>
-              )}
-            </>
-          )}
-        </button>
-      </div>
+      )}
+      
+      {/* Upload button */}
+      <button
+        className={`mt-6 w-full py-3 flex justify-center items-center rounded-lg font-medium ${
+          files.length > 0 && !isUploading
+            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+            : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+        }`}
+        disabled={files.length === 0 || isUploading}
+        onClick={handleUpload}
+      >
+        {isUploading ? (
+          <span className="flex items-center">
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Processing...
+          </span>
+        ) : (
+          <span className="flex items-center">
+            <Upload className="mr-2 h-5 w-5" />
+            Upload & Generate Documentation
+          </span>
+        )}
+      </button>
+      
+      {/* Progress indicator */}
+      {isUploading && (
+        <div className="mt-4">
+          <ProgressIndicator 
+            step={progressStep} 
+            status={uploadProgress} 
+            filename={currentFileName}
+            estimatedTime={estimatedTime}
+          />
+        </div>
+      )}
     </div>
   );
 };
