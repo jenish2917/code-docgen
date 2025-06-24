@@ -4,40 +4,12 @@ import CodeHighlighter from './CodeHighlighter';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { smartExport } from '../utils/documentConverter';
+import { sampleDocumentation, sampleGenerator } from '../data/sampleDocumentation';
 
 const DocViewer = ({ content, generator, isLoading: externalIsLoading }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-    const handleExport = async (format) => {
-    if (!content) return;
-    
-    try {
-      setIsLoading(true);
-      setShowExportMenu(false);
-      
-      // Use the new smart export function
-      const result = await smartExport(content, format, 'documentation');
-      
-      toast.success(`${format.toUpperCase()} document downloaded successfully: ${result.filename}`);
-      
-    } catch (error) {
-      console.error(`Error exporting to ${format}:`, error);
-      toast.error(`Failed to export to ${format.toUpperCase()}. ${error.message || 'Please try again.'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };  if (externalIsLoading || isLoading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-pulse">Loading documentation...</div>
-      </div>
-    );
-  }
-  
-  // No longer showing the placeholder since we're using SampleDocumentation instead
-  if (!content) {
-    return null;
-  }
+
   // Custom renderers for markdown with improved styling and hierarchy
   const components = {
     h1: ({children}) => (
@@ -92,128 +64,208 @@ const DocViewer = ({ content, generator, isLoading: externalIsLoading }) => {
     code({node, inline, className, children, ...props}) {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
-        <div className="my-4">
-          <CodeHighlighter 
-            language={match[1]} 
-            {...props}
-          >
-            {String(children).replace(/\n$/, '')}
-          </CodeHighlighter>
-        </div>
+        <CodeHighlighter language={match[1]} code={String(children).replace(/\n$/, '')} />
       ) : (
-        <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400" {...props}>
+        <code className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono" {...props}>
           {children}
         </code>
       );
+    },
+    table: ({children}) => (
+      <div className="overflow-x-auto mb-4">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({children}) => (
+      <thead className="bg-gray-50 dark:bg-gray-800">
+        {children}
+      </thead>
+    ),
+    th: ({children}) => (
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        {children}
+      </th>
+    ),
+    td: ({children}) => (
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
+        {children}
+      </td>
+    ),
+  };
+
+  const handleExport = async (format) => {
+    const contentToExport = content || sampleDocumentation;
+    if (!contentToExport) return;
+    
+    try {
+      setIsLoading(true);
+      setShowExportMenu(false);
+      
+      const filename = content ? 'documentation' : 'sample-documentation';
+      const result = await smartExport(contentToExport, format, filename);
+      
+      toast.success(`${format.toUpperCase()} document downloaded successfully: ${result.filename}`);
+      
+    } catch (error) {
+      console.error(`Error exporting to ${format}:`, error);
+      toast.error(`Failed to export to ${format.toUpperCase()}. ${error.message || 'Please try again.'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  if (externalIsLoading || isLoading) {
     return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3">
-        <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Documentation</h3>
-        <div className="flex items-center gap-2">
-          {generator && (
-            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200">
-              {generator === 'AI-Generated' ? '🤖 AI Generated' : 
-               generator === 'intel_deepseek' ? '🚀 AI Enhanced' :
-               generator === 'ollama' ? '⚡ AI Powered' : 
-               generator === 'fallback' ? '📝 Standard' : '✨ Generated'}
-            </span>
-          )}
-          {content && (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-pulse">Loading documentation...</div>
+      </div>
+    );
+  }
+
+  if (!content) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Sample Documentation</h3>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center">
+              <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+              <span className="text-sm px-3 py-1.5 rounded-full bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/30 dark:to-blue-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 font-medium">
+                🤖 AI Generated Sample
+              </span>
+            </div>
+            
             <div className="relative">
-              <button 
-                onClick={() => setShowExportMenu(!showExportMenu)} 
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors text-sm"
-                title="Export documentation"
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-800/40 dark:hover:to-indigo-800/40 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                disabled={isLoading}
               >
-                <Download size={16} />
-                <span>Export</span>
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Export Sample
               </button>
               
               {showExportMenu && (
-                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 shadow-lg rounded-md overflow-hidden z-10 border border-gray-200 dark:border-gray-700">
-                  <ul className="py-1">
-                    <li>
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                  <div className="py-2">
+                    {['markdown', 'html', 'txt', 'docx', 'pdf'].map((format) => (
                       <button
-                        onClick={() => handleExport('txt')}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        key={format}
+                        onClick={() => handleExport(format)}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                       >
-                        Text (.txt)
+                        Export as {format.toUpperCase()}
                       </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => handleExport('html')}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        HTML (.html)
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => handleExport('md')}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        Markdown (.md)
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => handleExport('docx')}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        Word (.docx)
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => handleExport('pdf')}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        PDF (.pdf)
-                      </button>
-                    </li>
-                  </ul>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-            {generator && (            <div 
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                generator === 'intel_deepseek'
-                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-300 dark:border-blue-600'                : generator === 'ollama'
-                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                : generator === 'multiple'
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                : generator === 'folder'
-                  ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
-                : generator === 'ast' || generator === 'fallback'
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                  : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-              }`} 
-              title={`Documentation generated by ${generator}`}
-            >
-              {generator === 'intel_deepseek' ? '🚀 Intel DeepSeek' :
-               generator === 'ollama' ? '🤖 AI Generated' :
-               generator === 'multiple' ? '📚 Multiple Files' :
-               generator === 'folder' ? '📁 Folder Analysis' :
-               generator === 'ast' || generator === 'fallback' ? '🧩 AST Parser' :
-               generator === 'error' ? '⚠️ Error' : '🧩 AST Parser'}
+          </div>
+        </div>
+        
+        <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-sm border border-gray-200/50 dark:border-gray-700/50 max-h-[800px] overflow-y-auto">
+          <div className="prose prose-lg dark:prose-invert max-w-none">
+            <ReactMarkdown components={components}>
+              {sampleDocumentation}
+            </ReactMarkdown>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-6 border border-blue-200/50 dark:border-blue-800/50">
+          <div className="text-center">
+            <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Ready to Generate Your Own Documentation?
+            </h4>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Upload your code files and let our AI generate comprehensive documentation like this sample.
+            </p>
+            <button className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:scale-105">
+              Start Generating Documentation
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Documentation</h3>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          {generator && (
+            <div className="flex items-center">
+              <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+              <span className="text-sm px-3 py-1.5 rounded-full bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/30 dark:to-blue-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 font-medium">
+                {generator === 'AI-Generated' ? '🤖 AI Generated' : 
+                 generator === 'Manual' ? '📝 Manual' : 
+                 generator}
+              </span>
             </div>
           )}
-        </div>      </div>      
-      <div className="documentation-content bg-white dark:bg-gray-800 rounded-lg p-8 shadow-sm border border-gray-200 dark:border-gray-700
-                     text-gray-900 dark:text-gray-100 leading-relaxed max-w-none
-                     [&>h1]:text-3xl [&>h1]:font-bold [&>h1]:mb-6 [&>h1]:pb-3 [&>h1]:border-b [&>h1]:border-gray-200 [&>h1]:dark:border-gray-700
-                     [&>h2]:text-2xl [&>h2]:font-semibold [&>h2]:mt-8 [&>h2]:mb-4 [&>h2]:text-blue-600 [&>h2]:dark:text-blue-400
-                     [&>h3]:text-xl [&>h3]:font-medium [&>h3]:mt-6 [&>h3]:mb-3 [&>h3]:text-gray-800 [&>h3]:dark:text-gray-200
-                     [&>h4]:text-lg [&>h4]:font-medium [&>h4]:mt-4 [&>h4]:mb-2 [&>h4]:text-gray-700 [&>h4]:dark:text-gray-300
-                     [&>p]:mb-4 [&>p]:leading-relaxed
-                     [&>ul]:mb-4 [&>ul]:space-y-1 [&>ol]:mb-4 [&>ol]:space-y-1
-                     [&>li]:ml-4
-                     [&>hr]:my-8 [&>hr]:border-gray-200 [&>hr]:dark:border-gray-700">
-        <ReactMarkdown components={components}>{content}</ReactMarkdown>
+          
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-800/40 dark:hover:to-indigo-800/40 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              Export
+            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                <div className="py-2">
+                  {['markdown', 'html', 'txt', 'docx', 'pdf'].map((format) => (
+                    <button
+                      key={format}
+                      onClick={() => handleExport(format)}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Export as {format.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-sm border border-gray-200/50 dark:border-gray-700/50 max-h-[800px] overflow-y-auto">
+        <div className="prose prose-lg dark:prose-invert max-w-none">
+          <ReactMarkdown components={components}>
+            {content}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );

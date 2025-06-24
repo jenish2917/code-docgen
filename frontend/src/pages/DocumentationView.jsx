@@ -15,10 +15,11 @@ export default function DocumentationView() {
   useEffect(() => {
     fetchDocumentation()
   }, [docId])
+
   const fetchDocumentation = async () => {
     try {
       setLoading(true)
-      const response = await api.get(`/documentation/${docId}/`)
+      const response = await api.get(`/api/documentation/${docId}/`)
       
       if (response.data.status === 'success') {
         setDocumentation(response.data.documentation)

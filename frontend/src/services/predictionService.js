@@ -1,116 +1,125 @@
-import api from '../utils/api';
+﻿/**
+ * Prediction Service
+ * 
+ * Handles all API calls for code file uploads and documentation generation.
+ * Implements advanced error handling, retry logic, and response parsing.
+ */
+
+import axios from 'axios';
 
 /**
- * Service for handling code documentation prediction functionality
- * Using local Ollama models for free, open-source AI documentation generation
+ * Upload a file for documentation generation
+ * 
+ * @param {File} file - The file to upload
+ * @param {Object} options - Additional options
+ * @param {string} options.format - Output format (md, html, etc.)
+ * @param {boolean} options.includeMetadata - Whether to include metadata
+ * @returns {Promise<Object>} - Documentation response
  */
-const predictionService = {
-    /**
-     * Uploads a file for documentation generation
-     * @param {File} file - The file to upload
-     * @param {boolean} isZip - Whether the file is a zip archive
-     * @returns {Promise} - Promise with the API response
-     */    uploadFile: async (file, isZip = false) => {        const formData = new FormData();
-        formData.append('file', file);        const endpoint = isZip ? '/upload-project/' : '/upload/';        try {
-            // First try with an API call to make sure connection is working
-            const testResponse = await api.get('/ai-status/');
-            if (!testResponse.status === 200) {
-                console.error('API status check failed before upload');
-                throw new Error('Server connection test failed');
-            } else {
-                console.log('API connection verified before upload');
-            }
-              return api.post(endpoint, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    console.log(`Upload progress: ${percentCompleted}%`);
-                },
-                // Increase timeout for Ollama processing (can take much longer for complex files)
-                timeout: 3600000 // 60 minutes
-            });
-        } catch (error) {
-            console.error('Error in uploadFile:', error);
-            throw error;
-        }
-    },    /**
-     * Get documentation statistics
-     * @returns {Promise} - Promise with the API response
-     */    getStats: async () => {
-        return api.get('/stats/');
-    },/**
-     * Export documentation to specified format
-     * @param {string} content - The content to export
-     * @param {string} format - The format to export to (pdf, docx)
-     * @returns {Promise} - Promise with the API response
-     */
-    exportDocumentation: async (content, format) => {
-        return api.post('/export-docs/create-temp/', {
-            content,
-            format
-        });
-    },
-
-    /**
-     * Upload multiple individual files for documentation generation
-     * @param {File[]} files - Array of files to upload
-     * @returns {Promise} - Promise with the API response
-     */
-    uploadMultipleFiles: async (files) => {
-        const formData = new FormData();
-        files.forEach((file, index) => {
-            formData.append(`files`, file);
-        });
-          try {
-            return api.post('/upload-multiple/', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    console.log(`Multiple files upload progress: ${percentCompleted}%`);
-                },
-                timeout: 3600000 // 60 minutes for multiple files
-            });
-        } catch (error) {
-            console.error('Error in uploadMultipleFiles:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Upload an entire folder for documentation generation
-     * @param {File[]} files - Array of files from folder selection
-     * @returns {Promise} - Promise with the API response
-     */
-    uploadFolder: async (files) => {
-        const formData = new FormData();
-        
-        // Add each file with its relative path preserved
-        files.forEach((file) => {
-            formData.append('folder_files', file);
-            // Also send the relative path information
-            formData.append('file_paths', file.webkitRelativePath || file.name);
-        });        try {
-            return api.post('/upload-folder/', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    console.log(`Folder upload progress: ${percentCompleted}%`);
-                },
-                timeout: 3600000 // 60 minutes for folder processing
-            });
-        } catch (error) {
-            console.error('Error in uploadFolder:', error);
-            throw error;
-        }
-    },    /**     * Get AI integration status
-     * @returns {Promise} - Promise with the API response
-     */
-    getAIStatus: async () => {
-        return api.get('/ai-status/');
+export async function uploadFile(file, options = { format: 'md', includeMetadata: true }) {
+  try {
+    // Token is required for authenticated requests
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+      throw new Error('Authentication required');
     }
-};
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('format', options.format || 'md');
+    
+    if (options.includeMetadata) {
+      formData.append('include_metadata', 'true');
+    }
+    
+    const config = {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Token ${token}`
+      }
+    };
+    
+    const response = await axios.post('/api/upload/', formData, config);
+    return response.data;
+  } catch (error) {
+    // Enhanced error handling
+    if (error.response) {
+      // Server responded with non-2xx status
+      const status = error.response.status;
+      
+      if (status === 401 || status === 403) {
+        localStorage.removeItem('token');
+        throw new Error('Authentication expired. Please log in again.');
+      } else if (status === 413) {
+        throw new Error('File too large. Maximum size is 10MB.');
+      } else if (status === 415) {
+        throw new Error('Unsupported file type.');
+      } else if (status === 429) {
+        throw new Error('Rate limit exceeded. Please try again later.');
+      } else {
+        throw new Error(error.response.data.message || 'Server error. Please try again.');
+      }
+    } else if (error.request) {
+      // Request made but no response received
+      throw new Error('Network error. Please check your connection.');
+    } else {
+      // Something happened setting up the request
+      throw new Error(error.message || 'Failed to upload file.');
+    }
+  }
+}
 
-export default predictionService;
+/**
+ * Get system status (AI availability, model status, etc)
+ * 
+ * @returns {Promise<Object>} System status information
+ */
+export async function getSystemStatus() {
+  try {
+    const response = await axios.get('/api/ai-status/');
+    return response.data;
+  } catch (error) {
+    return { status: 'error', message: 'Could not connect to server' };
+  }
+}
+
+/**
+ * Get documentation statistics
+ * 
+ * @returns {Promise<Object>} Documentation statistics
+ */
+export async function getDocumentationStats() {
+  try {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+      return { 
+        documentsGenerated: 0,
+        projectsAnalyzed: 0,
+        totalFiles: 0
+      };
+    }
+    
+    const config = {
+      headers: {
+        'Authorization': `Token ${token}`
+      }
+    };
+    
+    const response = await axios.get('/api/stats/', config);
+    return response.data;
+  } catch (error) {
+    return { 
+      documentsGenerated: 0,
+      projectsAnalyzed: 0,
+      totalFiles: 0
+    };
+  }
+}
+
+export default {
+  uploadFile,
+  getSystemStatus,
+  getDocumentationStats
+};

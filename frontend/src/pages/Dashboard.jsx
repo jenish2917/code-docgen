@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { Upload, FileCode, Book, Download, Calendar, Eye } from 'lucide-react'
 import AuthService from '../utils/auth'
 import api from '../utils/api'
+import ThemeToggle from '../components/ThemeToggle'
+import DocumentationHistory from '../components/DocumentationHistory'
+import DocViewer from '../components/DocViewer'
+import { sampleDocumentation, sampleGenerator } from '../data/sampleDocumentation'
 
-export default function Dashboard() {
+export default function Dashboard({ generatedDocs = "", generator = "" }) {
   const [user, setUser] = useState(null)  
   const [stats, setStats] = useState({
     total_files: 0,
@@ -16,7 +20,6 @@ export default function Dashboard() {
   const [recentDocs, setRecentDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
-  
   useEffect(() => {
     if (!AuthService.isLoggedIn()) {
       navigate('/login')
@@ -32,27 +35,30 @@ export default function Dashboard() {
     // Fetch real data from backend
     fetchDashboardData()
   }, [navigate])
-
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
-      // Fetch stats from backend
-      const statsResponse = await api.get('/stats/')
+      
+      // Get current user ID from token
+      const currentUserId = AuthService.getUserId();
+      
+      // Fetch stats from backend for current user only
+      const statsResponse = await api.get('/stats/', { 
+        params: { user_id: currentUserId }
+      })
       if (statsResponse.data.status === 'success') {
         setStats(statsResponse.data.stats)
       }
       
-      // Fetch recent files
-      const filesResponse = await api.get('/files/')
+      // Fetch recent files for current user only
+      const filesResponse = await api.get('/files/', {
+        params: { user_id: currentUserId }
+      })
       if (filesResponse.data.status === 'success') {
         setRecentFiles(filesResponse.data.files.slice(0, 5)) // Get 5 most recent
       }
       
-      // Fetch recent documentation
-      const docsResponse = await api.get('/documentation/')
-      if (docsResponse.data.status === 'success') {
-        setRecentDocs(docsResponse.data.documentation.slice(0, 5)) // Get 5 most recent
-      }
+      // We no longer need to fetch documentation here as it's handled by the DocumentationHistory component
       
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
@@ -72,7 +78,6 @@ export default function Dashboard() {
     AuthService.logout()
     navigate('/login')
   }
-  
   const goToUpload = () => {
     navigate('/')
   }
@@ -102,21 +107,36 @@ export default function Dashboard() {
   if (!user) return <div className="flex justify-center items-center h-screen">Loading...</div>
   
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+  <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+      <header className="bg-white dark:bg-gray-800 shadow-md p-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-semibold text-gray-800 dark:text-white">Code Documentation Generator</h1>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <span className="text-sm text-gray-600 dark:text-gray-300">Welcome, {user.username}</span>
+            <button 
+              onClick={handleLogout}
+              className="text-sm bg-red-600 px-3 py-1 rounded-lg text-white hover:bg-red-700 transition-all"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
       <main className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <button 
             onClick={goToUpload} 
-            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-blue-500"
+            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center p-8 text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-blue-500"
           >
-            <Upload className="w-12 h-12 text-blue-600 dark:text-blue-400 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Upload Code</h3>
-            <p className="text-gray-600 dark:text-gray-300 mt-2">Upload code files for automatic documentation generation</p>
+            <FileCode className="w-12 h-12 text-blue-600 dark:text-blue-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Analyze Code</h3>
+            <p className="text-gray-600 dark:text-gray-300 mt-2">Upload any code file to generate comprehensive documentation</p>
           </button>
           
           <button 
-            onClick={() => navigate('/documentation')} 
-            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-green-500"
+            onClick={goToUpload} 
+            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center p-8 text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-green-500"
           >
             <Book className="w-12 h-12 text-green-600 dark:text-green-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">View Documentation</h3>
@@ -125,15 +145,14 @@ export default function Dashboard() {
           
           <button 
             onClick={goToUpload} 
-            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-purple-500"
+            className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 flex flex-col items-center justify-center p-8 text-center hover:shadow-lg transition-all border-2 border-transparent hover:border-purple-500"
           >
             <Download className="w-12 h-12 text-purple-600 dark:text-purple-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Export Files</h3>
             <p className="text-gray-600 dark:text-gray-300 mt-2">Download documentation in various formats (TXT, HTML, Markdown, DOCX, PDF)</p>
           </button>
         </div>
-        
-        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mt-6">
+          <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
           <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">Upload Your Code</h2>
           <p className="text-gray-600 dark:text-gray-300 mb-6">
             You can now upload your code files for documentation generation. We support most programming languages.
@@ -155,8 +174,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
             <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Recent Files</h3>
             {loading ? (
@@ -235,52 +253,34 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-        
-        <div className="mt-6 bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Your Documentation History</h3>
-          
-          {recentDocs.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {recentDocs.map((doc) => (
-                <div key={doc.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {doc.code_file_title}
-                    </h4>
-                    <span className={`text-xs px-2 py-1 rounded-full ${getLanguageColor(doc.code_file_language)}`}>
-                      {doc.code_file_language}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
-                    {doc.content_preview}
-                  </p>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
-                      <span className="mr-1">By: {user.username}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">
-                        {new Date(doc.generated_at).toLocaleDateString()}
-                      </span>
-                      <button
-                        onClick={() => viewDocumentation(doc.id)}
-                        className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
-                      >
-                        <Eye className="w-3 h-3" />
-                        View
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          {/* Private Documentation History Component */}        <div className="mt-6 grid grid-cols-1 gap-6">
+          <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
+            <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">
+              {generatedDocs ? "Generated Documentation" : "Sample Documentation"}
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              {generatedDocs 
+                ? "Here's your latest generated documentation:"
+                : "Here's an example of the comprehensive documentation our system generates for your code."
+              }
+            </p>
+
+            <DocViewer 
+              content={generatedDocs || sampleDocumentation}
+              generator={generatedDocs ? generator : sampleGenerator}
+              isLoading={false}
+            />
+
+            <div className="mt-6 flex justify-center">
+              <button 
+                onClick={goToUpload}
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 font-medium"
+              >
+                <Upload className="w-5 h-5" />
+                {generatedDocs ? "Generate New Documentation" : "Generate Your Own Documentation"}
+              </button>
             </div>
-          ) : (
-            <div className="text-center p-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-              <p className="text-gray-600 dark:text-gray-400">
-                You haven't generated any documentation yet. Upload a code file to get started!
-              </p>
-            </div>
-          )}
+          </div>
         </div>
       </main>
     </div>

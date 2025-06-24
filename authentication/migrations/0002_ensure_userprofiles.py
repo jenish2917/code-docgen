@@ -1,26 +1,34 @@
 from django.db import migrations
-from django.contrib.auth.models import User
 
-def create_missing_profiles(apps, schema_editor):
-    # Get the UserProfile model from the migration state
+def ensure_user_profiles(apps, schema_editor):
+    User = apps.get_model('auth', 'User')
     UserProfile = apps.get_model('authentication', 'UserProfile')
+    TwoFactorAuth = apps.get_model('authentication', 'TwoFactorAuth')
     
-    # Get all users
+    # Create UserProfile for users without one
     for user in User.objects.all():
-        # Check if the user has a profile
-        try:
-            profile = user.profile
-        except:
-            # If the user doesn't have a profile, create one
-            UserProfile.objects.create(user=user)
-            print(f"Created missing profile for user: {user.username}")
+        UserProfile.objects.get_or_create(
+            user=user,
+            defaults={
+                'profile_picture': None,
+            }
+        )
+        
+    # Create TwoFactorAuth entries for users without one
+    for user in User.objects.all():
+        TwoFactorAuth.objects.get_or_create(
+            user=user,
+            defaults={
+                'is_enabled': False,
+                'secret_key': '',  # Will be populated when user enables 2FA
+            }
+        )
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ('authentication', '0001_initial'),
     ]
 
     operations = [
-        migrations.RunPython(create_missing_profiles),
+        migrations.RunPython(ensure_user_profiles),
     ]

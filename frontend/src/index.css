@@ -28,6 +28,56 @@
   }
 }
 
+/* Custom animations for loading */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(180deg);
+  }
+}
+
+@keyframes typing {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-typing {
+  animation: typing 2s steps(40, end), blink 1s infinite;
+}
+
+.terminal-cursor {
+  animation: blink 1s infinite;
+}
+
 /* Ensure dark mode text is visible for specific text colors */
 .dark .text-gray-700, 
 .dark .text-gray-800, 

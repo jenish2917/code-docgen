@@ -1,10 +1,10 @@
 import React from 'react';
-import api from '../utils/api';
+import axios from 'axios';
 
 const ExportButton = ({ docPath, format, fileName }) => {
   const handleExport = async () => {
     try {
-      const response = await api.get('/export-docs/', {
+      const response = await axios.get('http://localhost:8000/api/export-docs/', {
         params: {
           doc_path: docPath,
           format: format

@@ -1,27 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import logger from '../utils/logger';
 
 const AIConfigStatus = () => {
   const [aiStatus, setAiStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  useEffect(() => {
-    const fetchAIStatus = async () => {      try {        setIsLoading(true);
+  useEffect(() => {    const fetchAIStatus = async () => {
+      try {
+        setIsLoading(true);
         setError(null);
         
         // Simple, direct API call using the configured axios instance
         const response = await api.get('/ai-status/');
-        
         setAiStatus(response.data);
         
       } catch (err) {
-        console.error('Failed to fetch AI status:', err);
+        logger.error('Failed to fetch AI status:', err);
         setError('Unable to connect to backend. Please ensure the Django server is running.');
       } finally {
-        setIsLoading(false);
-      }
-    };    fetchAIStatus();
+        setIsLoading(false);      }
+    };
+    
+    fetchAIStatus();
     
     // Set up periodic refresh every 60 seconds (instead of 30)
     const interval = setInterval(fetchAIStatus, 60000);

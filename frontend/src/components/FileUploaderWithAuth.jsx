@@ -6,6 +6,7 @@ import predictionService from '../services/predictionService';
 import { toast } from 'react-toastify';
 import ProgressIndicator from './ProgressIndicator';
 import AuthService from '../utils/auth';
+import logger from '../utils/logger';
 
 // File and folder filtering constants with security enhancements
 const IGNORED_FOLDERS = new Set([
@@ -65,7 +66,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
   const onDrop = useCallback(acceptedFiles => {
     // Security check: Validate authentication
     if (!isAuthenticated) {
-      toast.error('You need to be logged in to upload files');
+      toast.error('Please log in to upload files');
       return;
     }
     
@@ -159,7 +160,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
   // Handle folder selection
   const handleFolderSelect = (e) => {
     if (!isAuthenticated) {
-      toast.error('You need to be logged in to upload files');
+      toast.error('Please log in to upload files');
       return;
     }
     
@@ -181,23 +182,20 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
   const handleUpload = async () => {
     // Double check authentication status
     if (!isAuthenticated) {
-      onUploadError("You need to be logged in to upload files");
+      onUploadError("Please log in to upload files");
+      toast.error('Please log in to upload files');
       return;
     }
     
     if (files.length === 0) {
       onUploadError("Please select files first");
       return;
-    }
-
-    console.log("Uploading files:", files.map(f => f.name).join(', '));
-    setIsUploading(true);
+    }    setIsUploading(true);
     if (onUploadStart) onUploadStart();
     
     try {
       if (uploadMode === 'folder' && files.length > 1) {
         // Handle folder upload
-        console.log("Processing folder with", files.length, "files");
         setCurrentFileName(`${files.length} files`);
         setEstimatedTime(Math.min(files.length * 15, 60)); // 15s per file, max 1 minute
         setUploadProgress(`Processing folder with ${files.length} files...`);
@@ -225,11 +223,10 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
             const fileData = new FormData();
             fileData.append('file', file);
             
-            try {
+        try {
               const response = await api.post('/upload/', fileData);
-              console.log(`File ${file.name} processed successfully`);
             } catch (err) {
-              console.error(`Error processing file ${file.name}:`, err);
+              logger.error(`Error processing file ${file.name}:`, err);
             }
           }
           
@@ -254,7 +251,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
           }
           
         } catch (error) {
-          console.error("Error processing folder:", error);
+          logger.error("Error processing folder:", error);
           setIsUploading(false);
           if (onUploadError) onUploadError("Error processing folder: " + error.message);
         }
@@ -269,7 +266,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
         handleMultipleFilesUpload(files);
       }
     } catch (error) {
-      console.error("Upload error:", error);
+      logger.error("Upload error:", error);
       setIsUploading(false);
       if (onUploadError) onUploadError("Upload failed: " + error.message);
     }
@@ -277,7 +274,6 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
 
   // Handle single file upload
   const handleSingleFileUpload = async (file) => {
-    console.log("Uploading single file:", file.name);
     
     setCurrentFileName(file.name);
     setEstimatedTime(15); // 15s for a single file
@@ -293,7 +289,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
       
       const response = await api.post('/upload/', formData);
       
-      console.log("Upload response:", response.data);
+      logger.log("Upload response:", response.data);
       
       if (response.data.status === 'success') {
         setProgressStep(3);
@@ -305,7 +301,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
         throw new Error(response.data.message || 'Upload failed');
       }
     } catch (error) {
-      console.error("File upload error:", error);
+      logger.error("File upload error:", error);
       setIsUploading(false);
       if (onUploadError) onUploadError("File upload failed: " + (error.response?.data?.message || error.message));
     }
@@ -313,7 +309,6 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
 
   // Handle multiple files upload
   const handleMultipleFilesUpload = async (files) => {
-    console.log("Uploading multiple files:", files.length);
     
     setCurrentFileName(`${files.length} files`);
     setEstimatedTime(Math.min(files.length * 10, 60)); // 10s per file, max 1 minute
@@ -331,7 +326,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
       
       const response = await api.post('/upload-multiple/', formData);
       
-      console.log("Upload multiple response:", response.data);
+      logger.log("Upload multiple response:", response.data);
       
       if (response.data.status === 'success') {
         setProgressStep(3);
@@ -344,9 +339,8 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
         });
       } else {
         throw new Error(response.data.message || 'Upload failed');
-      }
-    } catch (error) {
-      console.error("Multiple files upload error:", error);
+      }    } catch (error) {
+      logger.error("Multiple files upload error:", error);
       setIsUploading(false);
       if (onUploadError) onUploadError("Multiple files upload failed: " + (error.response?.data?.message || error.message));
     }
@@ -376,33 +370,19 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
     }
   });
   
-  // If user is not authenticated, show login prompt
+  // If user is not authenticated, show a simple message without redundant login buttons
   if (!isAuthenticated) {
     return (
       <div className="w-full">
-        <div className="border-2 border-yellow-300 rounded-lg p-6 text-center bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex flex-col items-center justify-center gap-3">
-            <LogIn className="w-12 h-12 text-yellow-500" />
+        <div className="border-2 border-gray-300 dark:border-gray-700 rounded-lg p-6 text-center bg-gray-50 dark:bg-gray-800/50">
+          <div className="flex flex-col items-center justify-center gap-2">
+            <LogIn className="w-8 h-8 text-gray-500 dark:text-gray-400" />
             <p className="text-gray-700 dark:text-gray-300 font-medium">
-              You need to be logged in to generate documentation
+              Please log in to upload files
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Please log in or create an account to use this feature
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Use the login button in the header above
             </p>
-            <div className="flex gap-4">
-              <a 
-                href="/login" 
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              >
-                Log In
-              </a>
-              <a 
-                href="/signup" 
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-              >
-                Sign Up
-              </a>
-            </div>
           </div>
         </div>
       </div>
@@ -570,8 +550,7 @@ const FileUploaderWithAuth = ({ onUploadSuccess, onUploadError, onUploadStart })
           />
         </div>
       )}
-    </div>
-  );
+    </div>  );
 };
 
 export default FileUploaderWithAuth;

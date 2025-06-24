@@ -63,16 +63,24 @@ class Documentation(models.Model):
             ('txt', 'Plain Text'),
             ('rtf', 'Rich Text Format'),
             ('pdf', 'PDF')
-        ],
-        db_index=True  # Added index for format filtering
+        ],        db_index=True  # Added index for format filtering
     )
     generation_time = models.FloatField(default=0.0)  # Track generation performance
+    owner = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='documentations',
+        db_index=True  # Index for user-based queries
+    )
     
     class Meta:
         ordering = ['-generated_at']  # Default ordering by newest first
         indexes = [
             models.Index(fields=['code_file', 'format']),     # Composite index for file-format queries
             models.Index(fields=['generated_at', 'format']),  # Date-format composite index
+            models.Index(fields=['owner', 'generated_at']),   # Index for user's documentation history
         ]
     
     def __str__(self):
