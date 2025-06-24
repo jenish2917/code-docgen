@@ -1,15 +1,15 @@
-# 📄 `AIConfigStatus.jsx` - Enterprise Documentation
+# 📄 `DocumentationView.jsx` - Enterprise Documentation
 
 ## 📋 Executive Summary
 
-**Module**: AIConfigStatus.jsx  
+**Module**: DocumentationView.jsx  
 **Language**: React JSX (JSX)  
 **Architecture**: Utility Module Pattern  
 **Complexity**: Commercial  
-**Purpose**: Manages application configuration and settings.  
+**Purpose**: Implements web API endpoints with request handling and response generation.  
 
 ### Business Value
-This React JSX module implements manages application configuration and settings. using utility module pattern principles. The implementation follows enterprise software development standards with commercial-grade software module suitable for production deployment.
+This React JSX module implements implements web api endpoints with request handling and response generation. using utility module pattern principles. The implementation follows enterprise software development standards with commercial-grade software module suitable for production deployment.
 
 ### Key Characteristics
 - **Professional Grade**: Commercial-grade software module
@@ -28,7 +28,7 @@ The module implements a utility module pattern with the following characteristic
 - **Functions**: 0 implemented methods
 - **Classes**: 0 defined components  
 - **Architecture Pattern**: Utility Module Pattern
-- **Code Complexity**: Commercial (122 lines)
+- **Code Complexity**: Commercial (131 lines)
 
 ### Design Principles
 - Follows React JSX best practices and coding standards
@@ -43,11 +43,14 @@ The module implements a utility module pattern with the following characteristic
 ## 🔗 Dependencies & Integration
 
 ### 📚 Standard Libraries
-- **`React, { useState, useEffect } from 'react';`**: System utility
+- **`{ useState, useEffect } from 'react'`**: System utility
+- **`{ useParams, useNavigate } from 'react-router-dom'`**: System utility
+- **`{ ArrowLeft, Calendar, FileCode, Download } from 'lucide-react'`**: System utility
 
 ### 🔧 Third-Party Libraries
-- **`api from '../utils/api';`**: External dependency
-- **`logger from '../utils/logger';`**: External dependency
+- **`api from '../utils/api'`**: External dependency
+- **`DocViewer from '../components/DocViewer'`**: External dependency
+- **`ThemeToggle from '../components/ThemeToggle'`**: External dependency
 
 ## ⚡ Implementation Guide
 
@@ -65,7 +68,7 @@ The module implements a utility module pattern with the following characteristic
 ## 📊 Quality Assessment
 
 ### Code Metrics
-- **Total Lines**: 122 (Professional scale)
+- **Total Lines**: 131 (Professional scale)
 - **Complexity**: Commercial grade implementation
 - **Architecture**: Utility Module Pattern
 - **Components**: 0 functions, 0 classes

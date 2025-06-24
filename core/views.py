@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -92,7 +93,7 @@ class UploadCodeView(APIView):
     - AI-powered documentation generation
     """
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     def _validate_file(self, uploaded_file) -> Tuple[bool, str]:
         """
@@ -166,10 +167,8 @@ class UploadCodeView(APIView):
                     
                     doc_content, generator = parse_codebase(save_path)
                     doc_path = f'docs_output/{uploaded_file.name}_doc.md'
-                    
-                    # Determine if AI was used (removed OpenRouter - paid service)
+                      # Determine if AI was used (removed OpenRouter - paid service)
                     ai_generated = generator in ["AI-Enhanced", "AI-Generated", "ollama"]
-                    
                     with open(doc_path, 'w', encoding='utf-8') as f:
                         f.write(doc_content)
                     
@@ -177,7 +176,8 @@ class UploadCodeView(APIView):
                     documentation = Documentation.objects.create(
                         code_file=code_file,
                         content=doc_content,
-                        file_path=doc_path
+                        file_path=doc_path,
+                        owner=request.user  # User is guaranteed to be authenticated
                     )
                     
                     print(f"✅ Saved to database: CodeFile ID {code_file.id}, Documentation ID {documentation.id}")
@@ -218,7 +218,7 @@ class UploadCodeView(APIView):
 
 class UploadProjectView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -331,7 +331,7 @@ class UploadProjectView(APIView):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 class GenerateDocsView(APIView):
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -382,7 +382,7 @@ class GenerateDocsView(APIView):
 
 class UploadMultipleFilesView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -416,11 +416,9 @@ class UploadMultipleFilesView(APIView):
                         save_path = f'media/{uploaded_file.name}'
                         with open(save_path, 'wb+') as f:
                             for chunk in uploaded_file.chunks():
-                                f.write(chunk)
-                        
+                                f.write(chunk)                        
                         doc_content, generator = parse_codebase(save_path)
                         doc_path = f'docs_output/{uploaded_file.name}_doc.md'
-                        
                         with open(doc_path, 'w', encoding='utf-8') as f:
                             f.write(doc_content)
                         
@@ -428,7 +426,8 @@ class UploadMultipleFilesView(APIView):
                         documentation = Documentation.objects.create(
                             code_file=code_file,
                             content=doc_content,
-                            file_path=doc_path
+                            file_path=doc_path,
+                            owner=request.user  # User is guaranteed to be authenticated
                         )
                         
                         print(f"✅ Saved to database: CodeFile ID {code_file.id}, Documentation ID {documentation.id}")
@@ -473,7 +472,7 @@ class UploadMultipleFilesView(APIView):
 
 class UploadFolderView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -533,15 +532,15 @@ class UploadFolderView(APIView):
 
                         # Determine if AI was used (removed OpenRouter - paid service)
                         ai_generated = generator in ["AI-Enhanced", "AI-Generated", "ollama"]
-                        
                         with open(doc_path, 'w', encoding='utf-8') as f:
                             f.write(doc_content)
-                        
+                          
                         # Create Documentation model instance
                         documentation = Documentation.objects.create(
                             code_file=code_file,
                             content=doc_content,
-                            file_path=doc_path
+                            file_path=doc_path,
+                            owner=request.user  # User is guaranteed to be authenticated
                         )
                         
                         results.append({
@@ -584,7 +583,7 @@ class UploadFolderView(APIView):
         })
 
 class ExportDocsView(APIView):
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -638,7 +637,7 @@ class CreateTempDocumentView(APIView):
     """
     Create temporary documents for export in various formats
     """
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
     
     @track_performance
     def post(self, request):
@@ -672,7 +671,7 @@ class CreateTempDocumentView(APIView):
             }, status=500)
 
 class AIStatusView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]
     
     def get(self, request):
         try:
@@ -697,12 +696,28 @@ class AIStatusView(APIView):
             })
         
 class CodeFileListView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]
     
     def get(self, request):
         """List all uploaded code files"""
         try:
-            code_files = CodeFile.objects.all().order_by('-uploaded_at')
+            # Get user_id from query parameters if provided
+            user_id = request.GET.get('user_id')
+            
+            if user_id:
+                # Filter files by user (through documentation ownership)
+                code_files = CodeFile.objects.filter(
+                    documentation__owner_id=user_id
+                ).distinct().order_by('-uploaded_at')
+                
+                # If no files found for this user, include files with no owner (legacy data)
+                if not code_files.exists():
+                    code_files = CodeFile.objects.filter(
+                        documentation__owner_id__isnull=True
+                    ).distinct().order_by('-uploaded_at')
+            else:
+                # Return all files if no user filter is provided
+                code_files = CodeFile.objects.all().order_by('-uploaded_at')
             
             files_data = []
             for code_file in code_files:
@@ -732,7 +747,7 @@ class CodeFileListView(APIView):
             }, status=500)
 
 class DocumentationListView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]
     
     def get(self, request):
         """List all generated documentation"""
@@ -764,7 +779,7 @@ class DocumentationListView(APIView):
             }, status=500)
 
 class DocumentationDetailView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]
     
     def get(self, request, doc_id):
         """Get full documentation content"""
@@ -796,7 +811,7 @@ class DocumentationDetailView(APIView):
             }, status=500)
 
 class StatsView(APIView):
-    permission_classes = []
+    permission_classes = [AllowAny]
     
     def get(self, request):
         """Get documentation statistics"""

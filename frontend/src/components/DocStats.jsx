@@ -96,34 +96,10 @@ const DocStats = ({ documentsGenerated = 0, projectsAnalyzed = 0, totalFiles = 0
                   className={`h-full bg-gradient-to-r ${stat.gradient} transition-all duration-1000`}
                   style={{ width: `${Math.min(stat.value * 10, 100)}%` }}
                 ></div>
-              </div>
-            </div>
+              </div>            </div>
           );
         })}
       </div>
-      
-      {/* Summary card */}
-      {(documentsGenerated > 0 || projectsAnalyzed > 0 || totalFiles > 0) && (
-        <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900/50 p-6 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-1">
-                Total Processing Activity
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400">
-                You've processed {totalFiles} files across {projectsAnalyzed || 'multiple'} projects, 
-                generating {documentsGenerated} documentation files.
-              </p>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-gray-700 dark:text-gray-300">
-                {documentsGenerated + projectsAnalyzed + totalFiles}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Total Actions</div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

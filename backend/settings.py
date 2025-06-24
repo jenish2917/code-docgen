@@ -79,9 +79,8 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    # 'rest_framework_simplejwt',  # Comment out until needed
+    'django.contrib.staticfiles',    'rest_framework',
+    'rest_framework_simplejwt',  # Enable JWT authentication
     'corsheaders',  # Enable CORS headers for frontend-backend communication
     'core',
     'authentication',
@@ -239,6 +238,16 @@ LOGGING = {
     },
 }
 
+# REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}
+
 # JWT Settings
 from datetime import timedelta
 SIMPLE_JWT = {
@@ -255,3 +264,15 @@ SESSION_COOKIE_AGE = 86400  # 1 day
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Email settings
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development
+DEFAULT_FROM_EMAIL = 'CodeDocGen <noreply@codedocgen.com>'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+
+# Frontend URL for password reset links
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')

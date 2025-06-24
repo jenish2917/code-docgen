@@ -21,21 +21,33 @@ const AuthService = {
     },
 
     // Register a new user
-    register: async (username, email, password) => {
-        try {
-            const response = await api.post("/auth/register/", {
-                username,
-                email,
-                password
-            });
-            return { success: true, data: response.data };
-        } catch (error) {
-            return { 
-                success: false, 
-                message: error.response?.data?.detail || "Registration failed",
-                errors: error.response?.data || {}
-            };
-        }
+    register: async (username, email, password, confirmPassword, firstName, lastName) => {
+        const response = await api.post("/auth/register/", {
+            username,
+            email,
+            password,
+            confirm_password: confirmPassword,
+            first_name: firstName,
+            last_name: lastName
+        });
+        return response.data;
+    },
+
+    // Forgot password
+    forgotPassword: async (email) => {
+        const response = await api.post("/auth/forgot-password/", { email });
+        return response.data;
+    },
+
+    // Reset password
+    resetPassword: async (uid, token, newPassword, confirmPassword) => {
+        const response = await api.post("/auth/reset-password/", {
+            uid,
+            token,
+            new_password: newPassword,
+            confirm_password: confirmPassword
+        });
+        return response.data;
     },
 
     // Logout and remove token
