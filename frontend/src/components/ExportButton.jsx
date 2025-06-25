@@ -1,48 +1,27 @@
 import React from 'react';
-import axios from 'axios';
+import { exportWithBackend } from '../utils/documentConverter';
 
-const ExportButton = ({ docPath, format, fileName }) => {
+const ExportButton = ({ content, format, fileName }) => {
   const handleExport = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/api/export-docs/', {
-        params: {
-          doc_path: docPath,
-          format: format
-        },
-        responseType: format === 'pdf' ? 'blob' : 'json'
-      });
+      if (!content) {
+        alert('No content available for export');
+        return;
+      }
 
-      if (format === 'pdf') {
-        // For PDF, create a blob and download
-        const blob = new Blob([response.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${fileName.replace(/\.[^/.]+$/, '')}_doc.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
-      } else {
-        // For HTML and Markdown, handle as text
-        const content = response.data.content;
-        const fileExtension = format === 'html' ? 'html' : 'md';
-        
-        const blob = new Blob([content], { 
-          type: format === 'html' ? 'text/html' : 'text/markdown' 
-        });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${fileName.replace(/\.[^/.]+$/, '')}_doc.${fileExtension}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
+      // Use the backend export function
+      const result = await exportWithBackend(content, format, fileName);
+      
+      if (result.success) {
+        console.log(`Successfully exported as ${format}: ${result.filename}`);
       }
     } catch (error) {
       console.error('Export error:', error);
-      alert(`Error exporting documentation as ${format.toUpperCase()}`);
+      if (error.message.includes('Failed to fetch')) {
+        alert('Unable to connect to server. Please ensure the backend is running.');
+      } else {
+        alert(`Error exporting documentation as ${format.toUpperCase()}: ${error.message}`);
+      }
     }
   };
 

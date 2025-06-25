@@ -271,7 +271,7 @@ export const wrapInHtmlDocument = (htmlContent, title = 'Generated Documentation
  */
 export const exportWithBackend = async (content, format, filename = 'documentation') => {
   try {
-    const response = await fetch('/export-docs/create-temp/', {
+    const response = await fetch('/api/export-docs/create-temp/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

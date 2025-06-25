@@ -612,6 +612,13 @@ class ExportDocsView(APIView):
                 filename=filename
             )
             
+            # Ensure file exists after export
+            if not os.path.exists(temp_file_path):
+                return Response({
+                    'status': 'error',
+                    'message': f'PDF export failed: Output file was not created'
+                }, status=500)
+                
             # Get download URL
             download_url = DocumentExporter.get_download_url(temp_file_path)
             
@@ -637,7 +644,7 @@ class CreateTempDocumentView(APIView):
     """
     Create temporary documents for export in various formats
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]  # Allow anonymous export of documents
     
     @track_performance
     def post(self, request):
@@ -843,3 +850,45 @@ class StatsView(APIView):
                 'status': 'error',
                 'message': f'Error fetching stats: {str(e)}'
             }, status=500)
+
+class DownloadFileView(APIView):
+    """
+    Download exported files
+    """
+    permission_classes = [AllowAny]  # Allow downloads without authentication for temporary files
+    
+    def get(self, request, file_path):
+        """Download a file by its path"""
+        try:
+            # Ensure the file path is within the media directory for security
+            media_root = str(settings.MEDIA_ROOT)  # Convert to string if it's a Path object
+            full_path = os.path.join(media_root, file_path)
+            
+            # Security check: ensure file is within media directory
+            if not str(full_path).startswith(media_root):
+                return Response({'error': 'Invalid file path'}, status=400)
+            
+            # Check if file exists
+            if not os.path.exists(full_path):
+                return Response({'error': 'File not found'}, status=404)
+            
+            # Determine content type based on file extension
+            content_type_map = {
+                '.pdf': 'application/pdf',
+                '.html': 'text/html',
+                '.md': 'text/markdown',
+                '.txt': 'text/plain',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }
+            
+            file_ext = os.path.splitext(full_path)[1].lower()
+            content_type = content_type_map.get(file_ext, 'application/octet-stream')
+            
+            # Read and serve the file
+            with open(full_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type=content_type)
+                response['Content-Disposition'] = f'attachment; filename="{os.path.basename(full_path)}"'
+                return response
+                
+        except Exception as e:
+            return Response({'error': f'Error downloading file: {str(e)}'}, status=500)

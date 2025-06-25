@@ -13,7 +13,8 @@ from core.views import (
     CodeFileListView,
     DocumentationListView,
     DocumentationDetailView,
-    StatsView
+    StatsView,
+    DownloadFileView
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -24,9 +25,9 @@ urlpatterns = [
     path('api/upload-project/', UploadProjectView.as_view()),
     path('api/upload-multiple/', UploadMultipleFilesView.as_view()),
     path('api/upload-folder/', UploadFolderView.as_view()),
-    path('api/generate-docs/', GenerateDocsView.as_view()),
-    path('api/export-docs/', ExportDocsView.as_view()),
+    path('api/generate-docs/', GenerateDocsView.as_view()),    path('api/export-docs/', ExportDocsView.as_view()),
     path('api/export-docs/create-temp/', CreateTempDocumentView.as_view()),
+    path('api/download/<path:file_path>/', DownloadFileView.as_view()),
     path('api/ai-status/', AIStatusView.as_view()),
     path('api/files/', CodeFileListView.as_view()),
     path('api/documentation/', DocumentationListView.as_view()),

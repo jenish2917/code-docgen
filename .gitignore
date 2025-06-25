@@ -75,12 +75,31 @@ Thumbs.db
 test_*.py
 test_*.js
 test_*.ts
+test_*.jsx
+test_*.tsx
 test_*.css
 *_test.py
+*_test.js
+*_test.jsx
+*_test.ts
+*_test.tsx
 debug_*.py
 diagnostic_*.py
 *_diagnostic.py
 cleanup_*.py
+
+# Test directories and config files
+tests/
+__tests__/
+__mocks__/
+jest.config.js
+babel.config.js
+setupTests.js
+.pytest_cache/
+coverage/
+.nyc_output/
+unittest.cfg
+pytest.ini
 
 # Logs and debugging
 *.log
