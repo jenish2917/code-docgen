@@ -42,20 +42,20 @@ The module implements a object-oriented design pattern with the following charac
 
 ### 🏛️ Classes & Components
 
-#### `StudentsConfig` Class
+#### `CoreConfig` Class
 
-**Purpose**: Core StudentsConfig implementation
+**Purpose**: Core CoreConfig implementation
 
 **Responsibility**: Core business logic implementation
 
 **Usage Pattern**: General purpose component
 
 ```python
-# Professional usage example for StudentsConfig
-from apps import StudentsConfig
+# Professional usage example for CoreConfig
+from apps import CoreConfig
 
 # Initialize and use the component
-instance = StudentsConfig()
+instance = CoreConfig()
 ```
 
 ## 🔗 Dependencies & Integration
@@ -74,10 +74,10 @@ instance = StudentsConfig()
 ### Usage Patterns
 ```python
 # Professional implementation example
-from apps import StudentsConfig
+from apps import CoreConfig
 
 # Enterprise-grade usage
-component = StudentsConfig()
+component = CoreConfig()
 ```
 
 ## 📊 Quality Assessment

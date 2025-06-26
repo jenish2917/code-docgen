@@ -14,10 +14,60 @@ Performance optimizations:
 - Efficient file handling and memory management
 - Progress tracking for long-running operations
 
-Author: Code Documentation Generator Team
+Author:             if not doc_content:
+                return Response(
+                    {'status': 'error', 'message': 'No documentation content provided (doc_content is required)'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Detailed request validation
+            if not isinstance(doc_content, str):
+                logger.error(f"CreateTempDocumentView: Invalid doc_content type: {type(doc_content)}")
+                return Response(
+                    {
+                        'status': 'error',
+                        'message': 'Invalid doc_content format. Expected string.',
+                        'received_type': str(type(doc_content))
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Validate export format
+            supported_formats = ['pdf', 'html', 'md', 'txt', 'docx']
+            if not export_format:
+                logger.error("CreateTempDocumentView: Missing export format")
+                return Response(
+                    {
+                        'status': 'error',
+                        'message': 'Export format is required. Please specify a format.',
+                        'supported_formats': supported_formats
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if export_format not in supported_formats:
+                logger.error(f"CreateTempDocumentView: Invalid format: {export_format}")
+                return Response(
+                    {
+                        'status': 'error',
+                        'message': f'Unsupported format "{export_format}". Supported formats are: {", ".join(supported_formats)}',
+                        'supported_formats': supported_formats,
+                        'received_format': export_format
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )on Generator Team
 Date: June 2025
 Version: 2.0.0
 """
+
+import os
+import time
+import tempfile
+import zipfile
+import shutil
+import traceback
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -28,29 +78,16 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from django.views.decorators.csrf import csrf_exempt
-from django.core.cache import cache
-from django.http import HttpResponse, JsonResponse
-import os
-import zipfile
-import tempfile
-import shutil
-import traceback
-import time
+from django.http import HttpResponse, FileResponse
 import logging
-import json
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from typing import Dict, List, Any, Tuple, Optional
-from .utils.code_parser import parse_codebase
-from .utils.llm_integration import generate_documentation, check_system_status
-from .utils.project_documentation_generator import ProjectDocumentationGenerator
-from .models import CodeFile, Documentation
+import shutil
 
-# Configure logging
+from .models import CodeFile, Documentation
+from core.utils.document_export import DocumentationGenerator
+from .utils.system_status import check_system_status
+from .utils.codebase_analyzer import parse_codebase
+from core.utils.project_documentation_generator import ProjectDocumentationGenerator
+
 logger = logging.getLogger(__name__)
 
 # Performance tracking decorator
@@ -583,99 +620,213 @@ class UploadFolderView(APIView):
         })
 
 class ExportDocsView(APIView):
-    permission_classes = [IsAuthenticated]
+    """Export documentation in various formats with enhanced error handling"""
     
-    @track_performance
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
-        doc_content = request.data.get('doc_content', '')
-        filename = request.data.get('filename', 'documentation')
-        export_format = request.data.get('format', 'md').lower()
-        
-        if not doc_content:
-            return Response({'status': 'error', 'message': 'No documentation content provided'}, status=400)
-        
-        # Validate format
-        supported_formats = ['txt', 'html', 'md', 'docx', 'pdf']
-        if export_format not in supported_formats:
-            return Response({
-                'status': 'error', 
-                'message': f'Unsupported format. Supported formats: {", ".join(supported_formats)}'
-            }, status=400)
-        
+        """Handle documentation export requests with improved error handling"""
         try:
-            from .utils.document_export import DocumentExporter
-            
-            # Create temporary file in the specified format
-            temp_file_path = DocumentExporter.create_temporary_file(
-                content=doc_content,
-                export_format=export_format,
-                filename=filename
-            )
-            
-            # Ensure file exists after export
-            if not os.path.exists(temp_file_path):
+            doc_content = request.data.get('doc_content', '')
+            filename = request.data.get('filename', 'documentation')
+            export_format = request.data.get('format', 'pdf').lower()
+            project_path = request.data.get('project_path', settings.BASE_DIR)
+
+            if not doc_content:
+                return Response(
+                    {'status': 'error', 'message': 'No documentation content provided'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Validate format
+            supported_formats = ['pdf', 'html', 'md', 'txt', 'docx']
+            if export_format not in supported_formats:
+                return Response(
+                    {
+                        'status': 'error',
+                        'message': f'Unsupported format. Supported formats: {", ".join(supported_formats)}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            from .utils.document_export import DocumentationGenerator
+
+            # Ensure the export directory exists
+            export_dir = os.path.join(settings.MEDIA_ROOT, 'exports')
+            os.makedirs(export_dir, exist_ok=True)
+
+            # Generate and get the exported file path
+            try:
+                timestamp = int(time.time())
+                output_path = DocumentationGenerator.create_temporary_file(
+                    content=doc_content,
+                    export_format=export_format,
+                    filename=f'{filename}_{timestamp}'
+                )
+
+                # Get the download URL
+                download_url = DocumentationGenerator.get_download_url(output_path)
+
+                return Response({
+                    'status': 'success',
+                    'download_url': download_url,
+                    'filename': os.path.basename(output_path)
+                })
+
+            except Exception as export_error:
+                # If PDF fails, try HTML as fallback
+                if export_format == 'pdf':
+                    try:
+                        # Try HTML fallback
+                        fallback_format = 'html'
+                        output_path = DocumentationGenerator.analyze_and_export(
+                            project_path=project_path,
+                            output_format=fallback_format,
+                            output_dir=export_dir
+                        )
+                        
+                        relative_path = os.path.relpath(output_path, settings.MEDIA_ROOT)
+                        download_url = f'{settings.MEDIA_URL}{relative_path}'.replace('\\', '/')
+
+                        return Response({
+                            'status': 'warning',
+                            'message': f'PDF generation failed. Created HTML version instead: {str(export_error)}',
+                            'download_url': download_url,
+                            'filename': os.path.basename(output_path)
+                        })
+
+                    except Exception as fallback_error:
+                        return Response({
+                            'status': 'error',
+                            'message': f'Export failed and fallback also failed. Original error: {str(export_error)}. Fallback error: {str(fallback_error)}'
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
                 return Response({
                     'status': 'error',
-                    'message': f'PDF export failed: Output file was not created'
-                }, status=500)
-                
-            # Get download URL
-            download_url = DocumentExporter.get_download_url(temp_file_path)
-            
-            return Response({
-                'status': 'success',
-                'message': f'Documentation exported successfully as {export_format.upper()}',
-                'download_url': download_url,
-                'file_path': temp_file_path,
-                'format': export_format,
-                'filename': os.path.basename(temp_file_path)
-            })
-            
+                    'message': f'Failed to export documentation: {str(export_error)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             return Response({
                 'status': 'error',
-                'message': f'Error exporting documentation: {str(e)}'
-            }, status=500)
-
+                'message': f'Unexpected error: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CreateTempDocumentView(APIView):
     """
-    Create temporary documents for export in various formats
+    Create a temporary document file for preview or processing
     """
-    permission_classes = [AllowAny]  # Allow anonymous export of documents
-    
+    permission_classes = [AllowAny]  # Temporarily allow all access for testing
+
     @track_performance
     def post(self, request):
-        content = request.data.get('content', '')
-        export_format = request.data.get('format', 'md').lower()
-        
-        if not content:
-            return Response({'error_message': 'No content provided'}, status=400)
-        
+        """Create a temporary document in the specified format"""
         try:
-            from .utils.document_export import DocumentExporter
+            # Log request details
+            logger.info(f"CreateTempDocumentView: Received request with data keys: {request.data.keys()}")
+            logger.info(f"CreateTempDocumentView: Content-Type: {request.content_type}")
+            logger.info(f"CreateTempDocumentView: Auth header: {request.headers.get('Authorization', 'No Auth header')}")
             
-            # Create temporary file
-            temp_file_path = DocumentExporter.create_temporary_file(
-                content=content,
-                export_format=export_format
-            )
+            # Extract data from request with detailed validation
+            # Support both 'content' and 'doc_content' field names for compatibility
+            doc_content = request.data.get('doc_content') or request.data.get('content')
+            filename = request.data.get('filename')
+            export_format = request.data.get('format', '').lower()
             
-            # Get download URL
-            download_url = DocumentExporter.get_download_url(temp_file_path)
+            # Log parsed values
+            logger.info(f"CreateTempDocumentView: Content present: {bool(doc_content)}")
+            logger.info(f"CreateTempDocumentView: Content length: {len(doc_content) if doc_content else 0}")
+            logger.info(f"CreateTempDocumentView: Content type: {type(doc_content)}")
+            logger.info(f"CreateTempDocumentView: Filename: {filename}")
+            logger.info(f"CreateTempDocumentView: Export format: {export_format}")
+            logger.info(f"CreateTempDocumentView: Raw data: {request.data}")
+
+            # Validate required fields
+            if not doc_content:
+                return Response(
+                    {'status': 'error', 'message': 'No documentation content provided (doc_content is required)'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            logger.info("CreateTempDocumentView: Initializing document creation")
+            try:
+                # Try to create the temporary file
+                temp_file = DocumentationGenerator.create_temporary_file(
+                    content=doc_content,
+                    export_format=export_format,
+                    filename=filename if filename else f'documentation_{int(time.time())}'
+                )
+                logger.info(f"CreateTempDocumentView: Successfully created file at {temp_file}")
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"CreateTempDocumentView: Document creation failed - {error_msg}")
+                return Response({
+                    'status': 'error',
+                    'message': f'Failed to create document: {error_msg}',
+                    'details': {
+                        'format': export_format,
+                        'content_length': len(doc_content) if doc_content else 0
+                    }
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Validate format
+            supported_formats = ['pdf', 'html', 'md', 'txt', 'docx']
+            if export_format not in supported_formats:
+                return Response(
+                    {
+                        'status': 'error',
+                        'message': f'Unsupported format. Supported formats: {", ".join(supported_formats)}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Ensure media directories exist
+            os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+            os.makedirs(os.path.join(settings.MEDIA_ROOT, 'temp'), exist_ok=True)
+            os.makedirs(os.path.join(settings.MEDIA_ROOT, 'exports'), exist_ok=True)
+
+            # Create temporary file using DocumentationGenerator
+            try:
+                logger.info("CreateTempDocumentView: Initializing DocumentationGenerator")
+                generator = DocumentationGenerator()
+                
+                logger.info("CreateTempDocumentView: Starting document creation")
+                temp_file = generator.create_temporary_file(
+                    content=doc_content,
+                    export_format=export_format,
+                    filename=filename if filename else f'documentation_{int(time.time())}'
+                )
+                logger.info(f"CreateTempDocumentView: Document created successfully at {temp_file}")
+            except ImportError as e:
+                logger.error(f"CreateTempDocumentView: Missing dependency - {str(e)}")
+                return Response({
+                    'status': 'error',
+                    'message': f'Required package not installed: {str(e)}',
+                    'error_type': 'dependency_error'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except Exception as e:
+                logger.error(f"CreateTempDocumentView: Document creation failed - {str(e)}")
+                return Response({
+                    'status': 'error',
+                    'message': f'Document creation failed: {str(e)}',
+                    'error_type': 'generation_error'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
+            # Generate download URL for the temporary file
+            relative_path = os.path.relpath(temp_file, settings.MEDIA_ROOT)
+            download_url = f'{settings.MEDIA_URL}{relative_path}'.replace('\\', '/')
+
             return Response({
+                'status': 'success',
                 'download_url': download_url,
-                'format': export_format,
-                'filename': os.path.basename(temp_file_path)
+                'filename': os.path.basename(temp_file)
             })
-            
+
         except Exception as e:
             return Response({
-                'error_message': f'Failed to create document: {str(e)}'
-            }, status=500)
+                'status': 'error',
+                'message': f'Failed to create temporary file: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AIStatusView(APIView):
     permission_classes = [AllowAny]

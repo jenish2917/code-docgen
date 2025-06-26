@@ -1,589 +1,1133 @@
 """
-Document export utilities for CodeDocGen
-Provides comprehensive markdown to multiple format conversion with optimized performance
+Professional Documentation Generator and Exporter
+Analyzes codebase and generates standardized documentation with watermarks
 """
+
 import os
-import tempfile
-import time
 import re
-import html
-from typing import Optional
-from functools import lru_cache
+import ast
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Any
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image, ListFlowable, ListItem, Preformatted
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch, cm
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+import markdown
+import time
 
-
-class MarkdownConverter:
-    """
-    Advanced markdown to multiple format converter with performance optimizations
+class DocumentationGenerator:
+    """Handles document generation in various formats from markdown content"""
     
-    Features:
-    - Cached regex patterns for better performance
-    - Optimized HTML conversion with proper syntax highlighting
-    - Support for complex markdown structures
-    """
-    
-    # Pre-compiled regex patterns for performance
-    CODE_BLOCK_PATTERN = re.compile(r'```(\w+)?\n(.*?)\n```', re.DOTALL)
-    INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
-    HEADER_PATTERNS = {
-        1: re.compile(r'^# (.*?)$', re.MULTILINE),
-        2: re.compile(r'^## (.*?)$', re.MULTILINE),
-        3: re.compile(r'^### (.*?)$', re.MULTILINE),
-        4: re.compile(r'^#### (.*?)$', re.MULTILINE),
-        5: re.compile(r'^##### (.*?)$', re.MULTILINE),
-        6: re.compile(r'^###### (.*?)$', re.MULTILINE),
-    }
-    BOLD_ITALIC_PATTERN = re.compile(r'\*\*\*(.*?)\*\*\*')
-    BOLD_PATTERN = re.compile(r'\*\*(.*?)\*\*')
-    ITALIC_PATTERN = re.compile(r'\*(.*?)\*')
-    LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
-    UL_PATTERN = re.compile(r'^\s*[-*+•]\s+', re.MULTILINE)
-    OL_PATTERN = re.compile(r'^\s*\d+\.\s+', re.MULTILINE)
-    
-    @classmethod
-    def markdown_to_html(cls, markdown_content: str) -> str:
-        """
-        Convert markdown to clean HTML with proper formatting and performance optimization
+    def __init__(self):
+        """Initialize with default styles and configurations"""
+        self.styles = getSampleStyleSheet()
         
-        Args:
-            markdown_content (str): Raw markdown content
-            
-        Returns:
-            str: Well-formatted HTML content        """
-        if not markdown_content:
-            return ""
+        # Define all custom styles we want to use
+        custom_styles = {
+            'Code': ParagraphStyle(
+                name='Code',
+                parent=self.styles['Normal'],
+                fontName='Courier',
+                fontSize=9,
+                backColor=colors.lightgrey,
+                spaceAfter=12
+            ),
+            'CodeBlock': ParagraphStyle(
+                name='CodeBlock',
+                parent=self.styles['Normal'],
+                fontName='Courier',
+                fontSize=9,
+                backColor=colors.lightgrey,
+                leftIndent=12,
+                rightIndent=12,
+                spaceAfter=12,
+                spaceBefore=12
+            )
+        }
         
-        html_content = markdown_content
-        
-        # Code blocks with syntax highlighting (handle first to avoid conflicts)
-        html_content = cls.CODE_BLOCK_PATTERN.sub(
-            r'<pre class="code-block"><code class="language-\1">\2</code></pre>', 
-            html_content
-        )
-        
-        # Inline code
-        html_content = cls.INLINE_CODE_PATTERN.sub(r'<code class="inline-code">\1</code>', html_content)
-        
-        # Headers (optimized with pre-compiled patterns)
-        for level, pattern in cls.HEADER_PATTERNS.items():
-            html_content = pattern.sub(rf'<h{level}>\1</h{level}>', html_content)
-        
-        # Bold and italic (optimized order)
-        html_content = cls.BOLD_ITALIC_PATTERN.sub(r'<strong><em>\1</em></strong>', html_content)
-        html_content = cls.BOLD_PATTERN.sub(r'<strong>\1</strong>', html_content)
-        html_content = cls.ITALIC_PATTERN.sub(r'<em>\1</em>', html_content)
-        
-        # Links
-        html_content = cls.LINK_PATTERN.sub(r'<a href="\2">\1</a>', html_content)
-        
-        # Process line by line for better structure
-        lines = html_content.split('\n')
-        processed_lines = []
-        in_ul = False
-        in_ol = False
-        in_code_block = False
-        
-        for line in lines:
-            stripped_line = line.strip()
-            
-            # Check if we're in a code block
-            if '<pre class="code-block">' in line:
-                in_code_block = True
-                processed_lines.append(line)
-                continue
-            elif '</code></pre>' in line:
-                in_code_block = False
-                processed_lines.append(line)
-                continue
-            elif in_code_block:
-                processed_lines.append(line)
-                continue
-            
-            # Handle headers (already converted)
-            if any(tag in stripped_line for tag in ['<h1>', '<h2>', '<h3>', '<h4>', '<h5>', '<h6>']):
-                # Close any open lists
-                if in_ul:
-                    processed_lines.append('</ul>')
-                    in_ul = False
-                if in_ol:
-                    processed_lines.append('</ol>')
-                    in_ol = False
-                processed_lines.append(line)
-                continue
-            
-            # Unordered lists
-            if re.match(r'^\s*[-*+•]\s+', line):
-                if not in_ul:
-                    processed_lines.append('<ul>')
-                    in_ul = True
-                if in_ol:
-                    processed_lines.append('</ol>')
-                    in_ol = False
-                item = re.sub(r'^\s*[-*+•]\s+', '', line)
-                processed_lines.append(f'  <li>{item}</li>')
-            # Ordered lists
-            elif re.match(r'^\s*\d+\.\s+', line):
-                if not in_ol:
-                    processed_lines.append('<ol>')
-                    in_ol = True
-                if in_ul:
-                    processed_lines.append('</ul>')
-                    in_ul = False
-                item = re.sub(r'^\s*\d+\.\s+', '', line)
-                processed_lines.append(f'  <li>{item}</li>')
+        # Safely register or update each style
+        for style_name, style in custom_styles.items():
+            if style_name in self.styles:
+                # Update existing style with new properties
+                existing_style = self.styles[style_name]
+                for attr, value in style.__dict__.items():
+                    if attr != 'name' and hasattr(existing_style, attr):
+                        setattr(existing_style, attr, value)
             else:
-                # Close any open lists for non-list content
-                if in_ul:
-                    processed_lines.append('</ul>')
-                    in_ul = False
-                if in_ol:
-                    processed_lines.append('</ol>')
-                    in_ol = False
-                
-                # Handle regular content
-                if stripped_line:
-                    processed_lines.append(f'<p>{line}</p>')
-                else:
-                    processed_lines.append('')
-          # Close any remaining open lists
-        if in_ul:
-            processed_lines.append('</ul>')
-        if in_ol:
-            processed_lines.append('</ol>')
+                # Add new style
+                self.styles.add(style)
         
-        return '\n'.join(processed_lines)
-    
-    @classmethod
-    def markdown_to_plain_text(cls, markdown_content: str) -> str:
+    def export_to_pdf(self, content: str, output_path: str) -> str:
         """
-        Convert markdown to clean plain text with optimized regex patterns
+        Convert markdown content to a professionally formatted PDF with watermark
         
         Args:
-            markdown_content (str): Raw markdown content to convert
+            content: Markdown content to convert
+            output_path: Where to save the PDF file
             
         Returns:
-            str: Clean plain text without markdown formatting
+            str: Path to the generated PDF file
+        """
+        try:
+            # Function for page templates with minimal, professional footers
+            def add_page_elements(canvas, doc):
+                # Add subtle footer with page number only (except on first page)
+                canvas.saveState()
+                if canvas.getPageNumber() > 1:  # Skip footer on first/cover page
+                    canvas.setFont('Helvetica', 8)
+                    canvas.setFillColor(colors.grey)
+                    page_text = f"Page {canvas.getPageNumber()}"
+                    canvas.drawRightString(doc.width + 50, 20, page_text)
+                canvas.restoreState()
+                
+                # No header for cleaner look, more content space
             
-        Note:
-            This method strips all markdown formatting while preserving content structure
-        """
-        if not markdown_content:
-            return ""
-        
-        text = markdown_content
-        
-        # Remove code blocks
-        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-        
-        # Remove inline code
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        
-        # Remove headers formatting
-        text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
-        
-        # Remove bold and italic
-        text = re.sub(r'\*\*\*(.*?)\*\*\*', r'\1', text)
-        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-        text = re.sub(r'\*(.*?)\*', r'\1', text)
-        
-        # Remove links, keep text
-        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-        
-        # Remove list markers
-        text = re.sub(r'^\s*[-*+]\s+', '• ', text, flags=re.MULTILINE)
-        text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
-        
-        # Clean up extra whitespace
-        text = re.sub(r'\n\s*\n', '\n\n', text)
-        text = text.strip()
-        
-        return text
+            # Set up document with optimized margins for more content area
+            doc = SimpleDocTemplate(
+                output_path,
+                pagesize=A4,
+                rightMargin=54,  # Reduced margins
+                leftMargin=54,
+                topMargin=56,  # Reduced top margin
+                bottomMargin=56  # Reduced bottom margin
+            )
+            
 
+            
+            # Create document story
+            story = []
+            
+            # Extract title for cover page (first H1 heading)
+            title = "Code Documentation"
+            title_match = re.search(r'^# (.+)$', content, re.MULTILINE)
+            if title_match:
+                title = title_match.group(1)
+            
+            # Add professional title with optimized spacing
+            story.append(Spacer(1, 0.5*inch))  # Balanced top spacing
+            
+            # Professional title with improved styling
+            story.append(Paragraph(title, ParagraphStyle(
+                name="Title", 
+                parent=self.styles['Title'],
+                fontSize=26,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#2c3e50"),  # Professional dark blue
+                leading=32,  # Control line height
+                spaceAfter=8
+            )))
+            
+            # Thin separator line for professional look
+            separator = Table([[""]], colWidths=[3*inch], rowHeights=[1])
+            separator.setStyle(TableStyle([
+                ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor("#95a5a6")),
+            ]))
+            story.append(separator)
+            
+            # Generation date in subtle gray
+            story.append(Spacer(1, 0.1*inch))
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 
+                         ParagraphStyle(
+                             name="Subtitle", 
+                             parent=self.styles['Normal'],
+                             alignment=TA_CENTER,
+                             fontSize=10,
+                             textColor=colors.HexColor("#7f8c8d"),  # Subtle gray
+                             spaceAfter=4
+                         )))
+            
+            # Add professionally styled table of contents
+            story.append(Spacer(1, 0.3*inch))  # Better spacing before TOC
+            
+            # TOC header with professional styling
+            toc_entry = Paragraph("Table of Contents", ParagraphStyle(
+                name="TOC_Header",
+                parent=self.styles['Heading1'],
+                fontSize=16,
+                textColor=colors.HexColor("#34495e"),
+                spaceBefore=0,
+                spaceAfter=8,
+                borderPadding=0
+            ))
+            story.append(toc_entry)
+            
+            # Subtle line below TOC header
+            toc_separator = Table([[""]], colWidths=[4*inch], rowHeights=[1])
+            toc_separator.setStyle(TableStyle([
+                ('LINEABOVE', (0, 0), (-1, -1), 0.3, colors.HexColor("#bdc3c7")),
+            ]))
+            story.append(toc_separator)
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Extract TOC entries (only if there are headings)
+            toc_entries = []
+            for match in re.finditer(r'^(#+)\s+(.+)$', content, re.MULTILINE):
+                level = len(match.group(1))
+                heading_text = match.group(2)
+                if level <= 3:  # Only include up to H3 in TOC
+                    indent = '    ' * (level - 1)
+                    toc_entries.append(f"{indent}• {heading_text}")
+            
+            # Add professionally styled TOC entries
+            if toc_entries:
+                # Create TOC table for consistent spacing and better appearance
+                toc_data = []
+                for entry in toc_entries:
+                    # Get indentation level from leading spaces
+                    indent_level = 0
+                    for i, char in enumerate(entry):
+                        if char != ' ':
+                            indent_level = i // 4
+                            break
+                    
+                    # Remove bullet point and trim
+                    entry_text = entry.strip().lstrip('• ')
+                    
+                    # Add styled TOC entry with consistent formatting
+                    toc_data.append([Paragraph(
+                        entry, 
+                        ParagraphStyle(
+                            name=f"TOC_Entry_{indent_level}",
+                            parent=self.styles['Normal'],
+                            fontSize=10,
+                            leftIndent=15*indent_level,
+                            spaceBefore=3,  # Tight but readable spacing
+                            spaceAfter=3,
+                            textColor=colors.HexColor("#4e5b60" if indent_level == 0 else "#5d6d7e")
+                        )
+                    )])
+                
+                # Create TOC table with optimized layout
+                toc_table = Table(toc_data, colWidths=[doc.width - 100])
+                toc_table.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                    ('TOPPADDING', (0, 0), (-1, -1), 1),
+                ]))
+                story.append(toc_table)
+                
+                # Only add page break if TOC is large enough to justify separate page
+                # Otherwise keep content flowing on same page for shorter documents
+                if len(content.strip()) > 0 and len(toc_entries) > 5:
+                    story.append(Spacer(1, 0.3*inch))
+                    story.append(PageBreak())
+                else:
+                    # For short TOCs, add visual separator
+                    story.append(Spacer(1, 0.3*inch))
+                    separator = Table([[""]], colWidths=[doc.width - 108], rowHeights=[1])
+                    separator.setStyle(TableStyle([
+                        ('LINEABOVE', (0, 0), (-1, -1), 0.3, colors.HexColor("#ecf0f1")),
+                    ]))
+                    story.append(separator)
+                    story.append(Spacer(1, 0.2*inch))
+            
+            # Helper functions and content processing
+            current_list_items = []
+            
+            def flush_list():
+                """Helper to add accumulated list items to story with professional styling"""
+                nonlocal current_list_items, story
+                if current_list_items:
+                    # Create a professional compact list style
+                    list_style = ParagraphStyle(
+                        name="ListItem",
+                        parent=self.styles['Normal'],
+                        fontSize=10,  # Slightly smaller for lists
+                        leading=14,   # Tight but readable line spacing
+                        spaceBefore=0,
+                        spaceAfter=0,
+                        leftIndent=10,
+                    )
+                    
+                    # Group list items with same indentation level for better spacing
+                    indent_groups = {}
+                    for item in current_list_items:
+                        # Count leading spaces to determine indentation level
+                        indent_match = re.match(r'^(\s*)', item)
+                        indent_level = len(indent_match.group(1)) if indent_match else 0
+                        
+                        if indent_level not in indent_groups:
+                            indent_groups[indent_level] = []
+                        indent_groups[indent_level].append(item.strip())
+                    
+                    # Process each indentation group
+                    for indent_level, items in sorted(indent_groups.items()):
+                        bullets = ListFlowable(
+                            [ListItem(Paragraph(item, list_style)) for item in items],
+                            bulletType='bullet',
+                            start='•',
+                            leftIndent=10 + (indent_level * 10),  # Progressive indentation
+                            rightIndent=0,
+                            bulletFontName='Helvetica',
+                            bulletFontSize=9,
+                            bulletOffsetY=0,
+                            spaceBefore=2 if indent_level == 0 else 0,  # Space only before top-level lists
+                            spaceAfter=4 if indent_level == 0 else 2,    # Less space after nested lists
+                        )
+                        story.append(bullets)
+                    
+                    current_list_items = []
+            
+            # Split content into lines for processing
+            lines = content.split('\n')
+            
+            # Track list and code block state
+            in_code = False
+            code_lines = []
+            code_language = ""
+            
+            for line in lines:
+                if line.startswith('```'):
+                    # Toggle code block state
+                    if in_code:
+                        # End code block
+                        flush_list()  # Flush any pending list items
+                        code_text = '\n'.join(code_lines)
+                        
+                        # Create a styled code block with border and background
+                        if code_language:
+                            # Add language label within the code block header
+                            code_header = Table([[Paragraph(f"<i>Language: {code_language}</i>",
+                                         ParagraphStyle(
+                                             name="CodeLabel",
+                                             parent=self.styles['Normal'],
+                                             fontSize=8,
+                                             textColor=colors.darkgrey
+                                         ))]],
+                                    colWidths=[doc.width - 72])
+                            code_header.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
+                                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.grey),
+                            ]))
+                            story.append(code_header)
+                        
+                        # Code content with more compact style and explicit width control
+                        code_style = ParagraphStyle(
+                            name="CodeBlockOptimized",
+                            parent=self.styles['CodeBlock'],
+                            fontSize=8.5,  # Slightly smaller font
+                            leading=10,  # Tighter line spacing
+                            spaceBefore=0,
+                            spaceAfter=0
+                        )
+                        
+                        # Calculate available width (accounting for page margins)
+                        available_width = doc.width - 72
+                        
+                        # Create preformatted text with optimized style
+                        code_preformatted = Preformatted(code_text, code_style)
+                        
+                        # Create a table with tight margins and borders
+                        code_container = Table([[code_preformatted]],
+                                            colWidths=[available_width])
+                        code_container.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, -1), colors.whitesmoke),  # Lighter background
+                            ('BOX', (0, 0), (-1, -1), 0.5, colors.lightgrey),  # Lighter border
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),  # Reduced padding
+                            ('TOPPADDING', (0, 0), (-1, -1), 3),  # Reduced padding
+                            ('LEFTPADDING', (0, 0), (-1, -1), 8),  # Reduced padding
+                            ('RIGHTPADDING', (0, 0), (-1, -1), 8),  # Reduced padding
+                        ]))
+                        story.append(code_container)
+                        story.append(Spacer(1, 4))  # Reduced spacing
+                        
+                        code_lines = []
+                        code_language = ""
+                    else:
+                        # Start code block - check for language
+                        code_language = line[3:].strip()
+                    in_code = not in_code
+                    continue
+                    
+                if in_code:
+                    code_lines.append(line)
+                    continue
+                
+                # Handle lists
+                list_match = re.match(r'^(\s*)[*-]\s+(.+)$', line)
+                if list_match:
+                    text = list_match.group(2)
+                    # Process inline code in list items
+                    text = re.sub(r'`([^`]+)`', 
+                              lambda m: f'<font face="Courier" size="9" color="#222222">{m.group(1)}</font>', 
+                              text)
+                    current_list_items.append(text)
+                    continue
+                else:
+                    flush_list()  # End list if we're not on a list item
+                
+                # Handle headings
+                if line.startswith('#'):
+                    level = len(re.match(r'^#+', line).group())
+                    text = line.lstrip('#').strip()
+                    
+                    # Add spacing before headings (except first heading)
+                    if story and not isinstance(story[-1], PageBreak):
+                        story.append(Spacer(1, 0.2 * inch))
+                    
+                    # Use modern, professional heading styles with careful spacing
+                    if level == 1:
+                        style = ParagraphStyle(
+                            name="CustomH1",
+                            parent=self.styles['Heading1'],
+                            fontSize=18,
+                            textColor=colors.HexColor("#2c3e50"),  # Dark blue-gray
+                            fontName="Helvetica-Bold",
+                            spaceBefore=15,
+                            spaceAfter=10,
+                            borderPadding=0,
+                            leading=22  # Controlled line height
+                        )
+                        # Add subtle underline for H1 sections
+                        if story and not isinstance(story[-1], PageBreak):
+                            h1_separator = Table([[""]], colWidths=[doc.width - 108], rowHeights=[1])
+                            h1_separator.setStyle(TableStyle([
+                                ('LINEBELOW', (0, 0), (-1, -1), 0.3, colors.HexColor("#e0e6ed")),
+                                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                            ]))
+                            story.append(h1_separator)
+                    elif level == 2:
+                        style = ParagraphStyle(
+                            name="CustomH2",
+                            parent=self.styles['Heading2'],
+                            fontSize=15,
+                            textColor=colors.HexColor("#34495e"),  # Medium blue-gray
+                            fontName="Helvetica-Bold",
+                            spaceBefore=12,
+                            spaceAfter=8,
+                            leading=18  # Controlled line height
+                        )
+                    else:
+                        style = ParagraphStyle(
+                            name=f"CustomH{level}",
+                            parent=self.styles[f'Heading{min(level, 4)}'],
+                            fontSize=13 - (level-3),  # Smaller for deeper headings
+                            textColor=colors.HexColor("#52656b"),  # Subtle blue-gray
+                            spaceBefore=10,
+                            spaceAfter=6,
+                            leading=16  # Controlled line height
+                        )
+                    
+                    story.append(Paragraph(text, style))
+                    continue
+                    
+                # Handle regular paragraphs
+                if line.strip():
+                    # Process inline code
+                    line = re.sub(r'`([^`]+)`', 
+                              lambda m: f'<font face="Courier" size="9" color="#222222" backcolor="#f5f5f5">{m.group(1)}</font>', 
+                              line)
+                    
+                    # Process bold text
+                    line = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', line)
+                    
+                    # Process italic text
+                    line = re.sub(r'\*([^*]+)\*', r'<i>\1</i>', line)
+                    
+                    story.append(Paragraph(line, self.styles['Normal']))
+                elif story and not isinstance(story[-1], Spacer) and not isinstance(story[-1], PageBreak):
+                    # Add space between paragraphs (avoid duplicate spacers)
+                    story.append(Spacer(1, 6))
+            
+            # Flush any remaining list items
+            flush_list()
+            
+            # Build and save the PDF with page templates
+            doc.build(story, onFirstPage=add_page_elements, onLaterPages=add_page_elements)
+            return output_path
+            
+        except ImportError as e:
+            raise ImportError(f"Failed to create PDF: Required package not installed. Install reportlab package. Error: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Failed to create PDF: {str(e)}")
+            
+    def export_to_docx(self, content: str, output_path: str) -> str:
+        """
+        Convert markdown content to a professionally formatted DOCX with styling and watermark
+        
+        Args:
+            content: Markdown content to convert  
+            output_path: Where to save the DOCX file
+            
+        Returns:
+            str: Path to the generated DOCX file
+        """
+        try:
+            from docx import Document
+            from docx.shared import Pt, Inches, RGBColor, Mm
+            from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
+            from docx.enum.dml import MSO_THEME_COLOR_INDEX
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            
+            # Create document
+            doc = Document()
+            
+            # Set document properties
+            doc.core_properties.title = "Code Documentation"
+            doc.core_properties.author = "Code-Docgen Enterprise"
+            doc.core_properties.created = datetime.now()
+            
+            # Configure document styles for professional appearance
+            styles = doc.styles
+            
+            # Set professional page margins
+            for section in doc.sections:
+                section.top_margin = Mm(13)       # Optimized professional top margin
+                section.bottom_margin = Mm(13)    # Optimized professional bottom margin
+                section.left_margin = Mm(19)      # Optimized professional left margin
+                section.right_margin = Mm(19)     # Optimized professional right margin
+            
+            # Create professional typography styles for better readability
+            # Normal text style
+            normal_style = styles['Normal']
+            normal_style.font.name = 'Calibri'
+            normal_style.font.size = Pt(10)
+            normal_style.paragraph_format.space_before = Pt(0)
+            normal_style.paragraph_format.space_after = Pt(2)
+            normal_style.paragraph_format.line_spacing = 1.08  # Slightly tighter line spacing
+            
+            # Heading styles for professional hierarchy
+            for i in range(1, 4):  # Headings 1-3
+                if f'Heading {i}' in styles:
+                    heading_style = styles[f'Heading {i}']
+                    heading_style.font.name = 'Calibri'
+                    heading_style.font.size = Pt(16 - (i*2))  # 16pt for H1, 14pt for H2, 12pt for H3
+                    heading_style.font.color.rgb = RGBColor(0x2c, 0x3e, 0x50)  # Professional blue-gray
+                    heading_style.paragraph_format.space_before = Pt(12 - (i*2))
+                    heading_style.paragraph_format.space_after = Pt(6)
+            
+            # Add title
+            title = "Code Documentation"
+            title_match = re.search(r'^# (.+)$', content, re.MULTILINE)
+            if title_match:
+                title = title_match.group(1)
+                
+            # Create professional cover page with consistent branding
+            # Substantial top margin for professional title placement
+            doc.add_paragraph().add_run().add_break()
+            
+            # Professional title
+            title_para = doc.add_heading(title, level=0)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_run = title_para.runs[0]
+            title_run.font.size = Pt(24)
+            title_run.font.color.rgb = RGBColor(0x2c, 0x3e, 0x50)  # Professional dark blue
+            
+            # Add horizontal line for professional appearance
+            border_para = doc.add_paragraph()
+            border_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            border_para.paragraph_format.space_before = Pt(12)
+            border_para.paragraph_format.space_after = Pt(12)
+            border_run = border_para.add_run()
+            border_run.add_text('_' * 40)  # 40-character line
+            border_run.font.color.rgb = RGBColor(0x95, 0xa5, 0xa6)  # Light gray
+            
+            # Add date in professional format
+            date_para = doc.add_paragraph()
+            date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            date_para.paragraph_format.space_before = Pt(6)
+            date_run = date_para.add_run(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            date_run.italic = True
+            date_run.font.size = Pt(10)
+            date_run.font.color.rgb = RGBColor(0x7f, 0x8c, 0x8d)  # Subtle gray
+            
+            # Watermark removed
+            
+            # Add section break
+            doc.add_page_break()
+            
+            # Add professionally styled table of contents
+            toc_header = doc.add_heading("Table of Contents", level=1)
+            toc_header.runs[0].font.color.rgb = RGBColor(0x34, 0x49, 0x5e)  # Professional blue-gray
+            
+            # Add subtle separator line below TOC header
+            toc_sep = doc.add_paragraph()
+            toc_sep.paragraph_format.space_before = Pt(0)
+            toc_sep.paragraph_format.space_after = Pt(6)
+            toc_sep_run = toc_sep.add_run("_" * 40)  # Simple underline using text
+            toc_sep_run.font.color.rgb = RGBColor(0xbd, 0xc3, 0xc7)  # Light gray
+            
+            # Extract and add TOC entries with optimized spacing and professional styling
+            toc_entries = []
+            toc_count = 0
+            for match in re.finditer(r'^(#+)\s+(.+)$', content, re.MULTILINE):
+                level = len(match.group(1))
+                heading_text = match.group(2)
+                if level <= 3:  # Only include up to H3 in TOC
+                    # Create TOC entry with professional styling
+                    para = doc.add_paragraph()
+                    para.paragraph_format.left_indent = Inches(0.2 * (level - 1))  # Slightly tighter indentation
+                    para.paragraph_format.space_before = Pt(1 if level > 1 else 2)
+                    para.paragraph_format.space_after = Pt(1 if level > 1 else 2)
+                    
+                    # Use varying bullet styles by level for professional hierarchy
+                    if level == 1:
+                        bullet = "•"  # Filled circle for level 1
+                    elif level == 2:
+                        bullet = "◦"  # Open circle for level 2
+                    else:
+                        bullet = "▪"  # Small square for level 3
+                    
+                    # Add entry with styled bullet and text
+                    entry_run = para.add_run(f"{bullet} {heading_text}")
+                    entry_run.font.size = Pt(11 - (level-1))  # Slightly smaller font for deeper levels
+                    
+                    if level == 1:
+                        entry_run.font.bold = True
+                        entry_run.font.color.rgb = RGBColor(0x2c, 0x3e, 0x50)  # Dark blue for level 1
+                    else:
+                        entry_run.font.color.rgb = RGBColor(0x34, 0x49, 0x5e)  # Medium blue for lower levels
+                    
+                    toc_count += 1
+            
+            # Add visual separator after TOC
+            toc_end_sep = doc.add_paragraph()
+            toc_end_sep.paragraph_format.space_before = Pt(6)
+            toc_end_sep.paragraph_format.space_after = Pt(6)
+            # Simple horizontal line
+            toc_end_sep.add_run("_" * 20).font.color.rgb = RGBColor(0xec, 0xf0, 0xf1)  # Very light gray
+            
+            # Only add page break after TOC if TOC is substantial
+            if toc_count > 5:
+                doc.add_page_break()
+            else:
+                # Add some spacing after a short TOC for better visual separation
+                doc.add_paragraph().paragraph_format.space_after = Pt(12)
+            
+            # Split content into lines
+            lines = content.split('\n')
+            
+            # Track list state
+            in_list = False
+            list_items = []
+            
+            # Track code block state  
+            in_code = False
+            code_lines = []
+            code_language = ""
+            
+            def add_list_items():
+                """Helper to add accumulated list items"""
+                nonlocal list_items
+                if list_items:
+                    for indent, text in list_items:
+                        p = doc.add_paragraph(style='List Bullet')
+                        p.paragraph_format.left_indent = Pt(18 * (indent // 2))
+                        p.paragraph_format.space_before = Pt(0)  # Minimized spacing
+                        p.paragraph_format.space_after = Pt(0)   # Minimized spacing
+                        
+                        # Process any formatting in the list item text
+                        parts = re.split(r'(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)', text)
+                        for part in parts:
+                            if part.startswith('`') and part.endswith('`'):
+                                # Inline code - optimize font size
+                                code_run = p.add_run(part[1:-1])
+                                code_run.font.name = 'Courier New'
+                                code_run.font.size = Pt(8.5)  # Slightly smaller for code
+                                code_run.font.color.rgb = RGBColor(51, 51, 51)
+                                
+                            elif part.startswith('**') and part.endswith('**'):
+                                # Bold text
+                                bold_run = p.add_run(part[2:-2])
+                                bold_run.bold = True
+                                
+                            elif part.startswith('*') and part.endswith('*'):
+                                # Italic text
+                                italic_run = p.add_run(part[1:-1])
+                                italic_run.italic = True
+                                
+                            elif part:
+                                # Regular text
+                                p.add_run(part)
+                    
+                    list_items = []
+            
+            for line in lines:
+                if line.startswith('```'):
+                    if in_code:
+                        # End code block
+                        # Add language identifier if present
+                        if code_language:
+                            lang_para = doc.add_paragraph()
+                            lang_para.paragraph_format.space_before = Pt(6)
+                            lang_para.paragraph_format.space_after = Pt(0)
+                            lang_run = lang_para.add_run(f"Language: {code_language}")
+                            lang_run.italic = True
+                            lang_run.font.size = Pt(8)
+                            lang_run.font.color.rgb = RGBColor(100, 100, 100)
+                        
+                        # Create professionally styled code block
+                        code_text = '\n'.join(code_lines)
+                        
+                        # Create a table for the code block with background shading
+                        # This provides better control over spacing and appearance than paragraph shading
+                        code_table = doc.add_table(rows=1, cols=1)
+                        code_table.style = 'Table Grid'  # Light borders
+                        
+                        # Set cell properties for code block
+                        code_cell = code_table.cell(0, 0)
+                        code_cell.width = Inches(6.0)  # Set width to fit page
+                        
+                        # Add shading to cell
+                        cell_properties = code_cell._element.tcPr
+                        shading_obj = OxmlElement('w:shd')
+                        shading_obj.set(qn('w:fill'), "F8F8F8")  # Light gray background
+                        cell_properties.append(shading_obj)
+                        
+                        # Add code paragraph with optimized spacing
+                        code_para = code_cell.paragraphs[0]  # First paragraph in cell
+                        code_para.paragraph_format.space_before = Pt(3)
+                        code_para.paragraph_format.space_after = Pt(3)
+                        code_para.paragraph_format.line_spacing = 1.0  # Single spacing for code
+                        
+                        # Add code text with professional monospace styling
+                        code_run = code_para.add_run(code_text)
+                        code_run.font.name = 'Consolas'  # More readable monospace font
+                        code_run.font.size = Pt(8.5)  # Slightly smaller for compactness
+                        code_run.font.color.rgb = RGBColor(51, 51, 51)  # Dark gray
+                        
+                        # Add minimal spacing after the table
+                        spacer = doc.add_paragraph()
+                        spacer.paragraph_format.space_before = Pt(0)
+                        spacer.paragraph_format.space_after = Pt(3)
+                        
+                        # Reset code block tracking
+                        code_lines = []
+                        code_language = ""
+                    else:
+                        # Start code block - check for language
+                        code_language = line[3:].strip()
+                    in_code = not in_code
+                    continue
+                
+                if in_code:
+                    code_lines.append(line)
+                    continue
+                
+                # Handle headings
+                if line.startswith('#'):
+                    # Add any pending list items
+                    add_list_items()
+                    
+                    level = len(re.match(r'^#+', line).group())
+                    text = line.lstrip('#').strip()
+                    doc.add_heading(text, level=min(level, 9))
+                    continue
+                
+                # Handle lists
+                list_match = re.match(r'^(\s*)[*-]\s+(.+)$', line)
+                if list_match:
+                    indent = len(list_match.group(1))
+                    text = list_match.group(2)
+                    list_items.append((indent, text))
+                    in_list = True
+                    continue
+                elif in_list:
+                    # End list
+                    add_list_items()
+                    in_list = False
+                
+                # Handle regular paragraphs
+                if line.strip():
+                    # Add any pending list items
+                    add_list_items()
+                    
+                    p = doc.add_paragraph()
+                    
+                    # Process inline code
+                    parts = re.split(r'(`[^`]+`)', line)
+                    for part in parts:
+                        if part.startswith('`') and part.endswith('`'):
+                            # Inline code
+                            run = p.add_run(part[1:-1])  # Remove backticks
+                            run.font.name = 'Courier New'
+                            run.font.size = Pt(9)
+                            run.font.color.rgb = RGBColor(51, 51, 51)  # Dark gray
+                        else:
+                            # Regular text
+                            p.add_run(part)
+            
+            # Add any remaining list items
+            add_list_items()
+                            
+            # Save the document
+            doc.save(output_path)
+            return output_path
+            
+        except ImportError as e:
+            raise ImportError(f"Failed to create DOCX: Required package not installed. Install python-docx package. Error: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Failed to create DOCX: {str(e)}")
 
-class DocumentExporter:
-    """
-    Advanced document exporter supporting multiple formats with optimized performance
-    
-    Supported formats:
-    - HTML: Full-featured with CSS styling
-    - TXT: Clean plain text
-    - MD: Structured Markdown
-    - RTF: Rich Text Format (DOCX alternative)
-    - PDF: Print-ready HTML (requires browser printing)
-    
-    Features:
-    - Professional templates
-    - Optimized file generation
-    - Temporary file management
-    - Cross-platform compatibility
-    """
-    
-    @staticmethod
-    def get_html_template() -> str:
+    def export_to_html(self, content: str, output_path: str) -> str:
         """
-        Get professional HTML template for documentation with enhanced styling
+        Convert markdown content to a professionally styled HTML document
+        
+        Args:
+            content: Markdown content to convert
+            output_path: Where to save the HTML file
+            
+        Returns:
+            str: Path to the generated HTML file
         """
-        return """<!DOCTYPE html>
+        try:
+            # Convert markdown to HTML
+            html_content = markdown.markdown(
+                content, 
+                extensions=[
+                    'markdown.extensions.fenced_code',
+                    'markdown.extensions.tables',
+                    'markdown.extensions.codehilite'
+                ]
+            )
+            
+            # Get document title
+            title = "Code Documentation"
+            title_match = re.search(r'^# (.+)$', content, re.MULTILINE)
+            if title_match:
+                title = title_match.group(1)
+            
+            # Add syntax highlighting CSS and modern styling
+            css = """
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.5; /* Tighter line spacing */
+                color: #333;
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 15px; /* Reduced padding */
+            }
+            header {
+                text-align: center;
+                padding: 10px; /* Reduced padding */
+                margin-bottom: 20px; /* Reduced margin */
+                border-bottom: 1px solid #eee;
+                position: relative;
+            }
+            /* No watermark */
+            h1 {
+                color: #2c3e50;
+                margin-top: 20px; /* Reduced margin */
+                margin-bottom: 15px; /* Controlled spacing */
+            }
+            h2 {
+                color: #3498db;
+                margin-top: 18px; /* Reduced margin */
+                margin-bottom: 12px; /* Controlled spacing */
+                border-bottom: 1px solid #eee;
+                padding-bottom: 4px; /* Reduced padding */
+            }
+            h3, h4 {
+                color: #2c3e50;
+                margin-top: 15px; /* Reduced margin */
+                margin-bottom: 10px; /* Controlled spacing */
+            }
+            pre {
+                background-color: #f8f8f8;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                padding: 10px; /* Reduced padding */
+                margin: 10px 0; /* Reduced margin */
+                overflow: auto;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 13px; /* Smaller font */
+                line-height: 1.3; /* Tighter line spacing */
+            }
+            code {
+                background-color: #f0f0f0;
+                padding: 1px 3px; /* Reduced padding */
+                border-radius: 2px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 0.9em;
+            }
+            pre code {
+                background-color: transparent;
+                padding: 0;
+            }
+            blockquote {
+                border-left: 4px solid #ddd;
+                padding-left: 16px;
+                margin-left: 0;
+                color: #777;
+            }
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                margin: 20px 0;
+            }
+            table, th, td {
+                border: 1px solid #ddd;
+            }
+            th, td {
+                padding: 12px;
+                text-align: left;
+            }
+            th {
+                background-color: #f8f8f8;
+            }
+            tr:nth-child(even) {
+                background-color: #f8f8f8;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #eee;
+                color: #777;
+                font-size: 0.9em;
+            }
+            .code-header {
+                background-color: #e7e7e7;
+                border: 1px solid #ddd;
+                border-bottom: none;
+                border-radius: 4px 4px 0 0;
+                padding: 5px 16px;
+                font-size: 0.8em;
+                color: #777;
+                display: flex;
+                justify-content: space-between;
+                margin-top: 20px;
+            }
+            .code-block-container {
+                margin: 0;
+            }
+            .code-block-container + pre {
+                border-top-left-radius: 0;
+                border-top-right-radius: 0;
+                margin-top: 0;
+            }
+            .toc {
+                background-color: #f8f8f8;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 16px;
+                margin: 20px 0;
+            }
+            .toc ul {
+                margin: 0;
+                padding-left: 20px;
+            }
+            .toc-title {
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+            """
+            
+            # Process code blocks to add language labels
+            def process_code_blocks(html):
+                # Add language labels to code blocks
+                pattern = r'<pre><code class="language-([^"]+)">(.*?)</code></pre>'
+                replacement = r'<div class="code-header"><span>Language: \1</span></div><pre class="code-block-container"><code class="language-\1">\2</code></pre>'
+                return re.sub(pattern, replacement, html, flags=re.DOTALL)
+            
+            # Extract TOC
+            toc_html = '<div class="toc"><div class="toc-title">Table of Contents</div><ul>\n'
+            for match in re.finditer(r'^(#+)\s+(.+)$', content, re.MULTILINE):
+                level = len(match.group(1))
+                heading_text = match.group(2)
+                if level <= 3:  # Only include up to H3 in TOC
+                    # Create a CSS-friendly ID from the heading text
+                    heading_id = re.sub(r'[^a-z0-9]', '-', heading_text.lower())
+                    toc_html += f'<li style="margin-left: {(level-1)*15}px"><a href="#{heading_id}">{heading_text}</a></li>\n'
+            toc_html += '</ul></div>'
+            
+            # Add IDs to headings for TOC links
+            def add_heading_ids(html):
+                for match in re.finditer(r'<h([1-3])>(.*?)</h\1>', html):
+                    heading_level = match.group(1)
+                    heading_text = match.group(2)
+                    heading_id = re.sub(r'[^a-z0-9]', '-', heading_text.lower())
+                    html = html.replace(
+                        match.group(0),
+                        f'<h{heading_level} id="{heading_id}">{heading_text}</h{heading_level}>'
+                    )
+                return html
+            
+            # Process code blocks and add heading IDs
+            html_content = process_code_blocks(html_content)
+            html_content = add_heading_ids(html_content)
+            
+            # Construct the complete HTML document
+            full_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Code Documentation</title>
+    <title>{title}</title>
     <style>
-        * {{
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.7;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-            color: #374151;
-            background: #ffffff;
-            font-size: 16px;
-        }}
-        
-        /* Professional Header */
-        .header {{
-            text-align: center;
-            margin-bottom: 4rem;
-            padding: 3rem 2rem;
-            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-            color: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(30, 64, 175, 0.1);
-        }}
-        
-        .header h1 {{
-            font-size: 3rem;
-            font-weight: 700;
-            margin: 0 0 1rem 0;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        
-        .header p {{
-            font-size: 1.1rem;
-            margin: 0;
-            opacity: 0.9;
-        }}
-        
-        /* Table of Contents */
-        .toc {{
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 2rem;
-            margin: 2rem 0;
-        }}
-        
-        .toc h2 {{
-            color: #1e40af;
-            font-size: 1.5rem;
-            margin-top: 0;
-            margin-bottom: 1.5rem;
-            text-align: center;
-        }}
-        
-        .toc ul {{
-            list-style: none;
-            padding-left: 0;
-        }}
-        
-        .toc li {{
-            margin-bottom: 0.5rem;
-            padding-left: 1rem;
-        }}
-        
-        .toc a {{
-            color: #374151;
-            text-decoration: none;
-            font-weight: 500;
-        }}
-        
-        .toc a:hover {{
-            color: #1e40af;
-        }}
-        
-        /* Enhanced Typography */
-        h1, h2, h3, h4, h5, h6 {{
-            color: #1e40af;
-            margin-top: 3rem;
-            margin-bottom: 1.5rem;
-            font-weight: 600;
-            line-height: 1.3;
-        }}
-        
-        h1 {{
-            font-size: 2.5rem;
-            border-bottom: 3px solid #3b82f6;
-            padding-bottom: 1rem;
-            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-top: 2rem;
-        }}
-        
-        h2 {{
-            font-size: 2rem;
-            border-bottom: 2px solid #cbd5e1;
-            padding-bottom: 0.75rem;
-            background: #f8fafc;
-            padding: 1rem 1.5rem 1rem 1.5rem;
-            border-radius: 6px;
-            border-left: 4px solid #3b82f6;
-        }}
-        
-        h3 {{
-            font-size: 1.5rem;
-            color: #3730a3;
-            border-left: 3px solid #6366f1;
-            padding-left: 1rem;
-        }}
-        
-        h4 {{
-            font-size: 1.25rem;
-            color: #1e3a8a;
-        }}
-        
-        h5, h6 {{
-            font-size: 1.1rem;
-            color: #1e40af;
-        }}
-        
-        /* Enhanced Paragraphs */
-        p {{
-            margin-bottom: 1.25rem;
-            text-align: justify;
-            font-size: 1rem;
-            line-height: 1.7;
-        }}
-        
-        /* Professional Code Blocks */
-        .code-block {{
-            background: #f3f4f6;
-            border: 1px solid #d1d5db;
-            border-left: 4px solid #3b82f6;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            overflow-x: auto;
-            font-family: 'Consolas', 'Monaco', 'SF Mono', 'Menlo', 'Courier New', monospace;
-            font-size: 0.9rem;
-            line-height: 1.6;
-            position: relative;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }}
-        
-        .code-block::before {{
-            content: attr(data-language);
-            position: absolute;
-            top: 0.5rem;
-            right: 1rem;
-            background: #1e40af;
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }}
-        
-        .code-block pre {{
-            margin: 0;
-            padding: 0;
-            background: none;
-            border: none;
-            overflow: visible;
-        }}
-        
-        .code-block code {{
-            background: none;
-            padding: 0;
-            border-radius: 0;
-            font-size: inherit;
-            color: #1f2937;
-        }}
-        
-        /* Inline Code */
-        .inline-code {{
-            background: #f3f4f6;
-            color: #dc2626;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-family: 'Consolas', 'Monaco', 'SF Mono', 'Menlo', 'Courier New', monospace;
-            font-size: 0.9em;
-            font-weight: 600;
-            border: 1px solid #e5e7eb;
-        }}
-        
-        /* Enhanced Lists */
-        ul, ol {{
-            margin: 1.5rem 0;
-            padding-left: 2rem;
-        }}
-        
-        li {{
-            margin-bottom: 0.75rem;
-            line-height: 1.6;
-        }}
-        
-        ul li {{
-            position: relative;
-        }}
-        
-        ul li::marker {{
-            color: #3b82f6;
-            font-weight: bold;
-        }}
-        
-        ol li::marker {{
-            color: #1e40af;
-            font-weight: bold;
-        }}
-        
-        /* Professional Links */
-        a {{
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: 500;
-            border-bottom: 1px solid transparent;
-            transition: all 0.2s ease;
-        }}
-        
-        a:hover {{
-            color: #1d4ed8;
-            border-bottom-color: #2563eb;
-        }}
-        
-        /* Enhanced Text Formatting */
-        strong {{
-            font-weight: 700;
-            color: #1f2937;
-        }}
-        
-        em {{
-            font-style: italic;
-            color: #4b5563;
-        }}
-        
-        /* Blockquotes */
-        blockquote {{
-            border-left: 4px solid #3b82f6;
-            background: #eff6ff;
-            margin: 1.5rem 0;
-            padding: 1rem 1.5rem;
-            border-radius: 0 8px 8px 0;
-            font-style: italic;
-            color: #1e3a8a;
-        }}
-        
-        blockquote p {{
-            margin-bottom: 0;
-        }}
-        
-        /* Professional Footer */
-        .footer {{
-            margin-top: 4rem;
-            padding: 2rem;
-            border-top: 2px solid #e5e7eb;
-            text-align: center;
-            background: #f9fafb;
-            border-radius: 8px;
-        }}
-        
-        .footer p {{
-            color: #6b7280;
-            font-size: 0.9rem;
-            margin: 0.5rem 0;
-        }}
-        
-        .footer .generator {{
-            font-weight: 600;
-            color: #374151;
-            font-size: 1rem;
-        }}
-        
-        /* Responsive Design */
-        @media (max-width: 768px) {{
-            body {{
-                padding: 1rem;
-                font-size: 14px;
-            }}
-            
-            .header {{
-                padding: 2rem 1rem;
-            }}
-            
-            .header h1 {{
-                font-size: 2rem;
-            }}
-            
-            h1 {{ font-size: 2rem; }}
-            h2 {{ font-size: 1.5rem; }}
-            h3 {{ font-size: 1.25rem; }}
-        }}
-        
-        /* Print Styles */
-        @media print {{
-            body {{
-                padding: 1rem;
-                max-width: none;
-                font-size: 12pt;
-                line-height: 1.4;
-            }}
-            
-            .header {{
-                background: none !important;
-                color: #000 !important;
-                box-shadow: none !important;
-                border: 2px solid #000;
-            }}
-            
-            .code-block {{
-                break-inside: avoid;
-                box-shadow: none;
-                border: 1px solid #000;
-            }}
-            
-            a {{
-                color: #000 !important;
-                text-decoration: underline !important;
-            }}
-            
-            .toc {{
-                break-inside: avoid;
-            }}
-        }}
-        
-        /* Syntax Highlighting Classes */
-        .highlight-keyword {{ color: #7c3aed; font-weight: bold; }}
-        .highlight-string {{ color: #059669; }}
-        .highlight-comment {{ color: #6b7280; font-style: italic; }}
-        .highlight-number {{ color: #dc2626; }}
-        .highlight-function {{ color: #2563eb; font-weight: bold; }}
+    {css}
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Code Documentation</h1>
-        <p>Generated on {timestamp}</p>
-        <p>CodeDocGen - AI-Powered Documentation Generator</p>
-    </div>
+    <header>
+        <h1>{title}</h1>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+    </header>
     
-    {toc}
+    {toc_html}
     
     <div class="content">
-        {content}
+    {html_content}
     </div>
     
     <div class="footer">
-        <p class="generator">CodeDocGen</p>
-        <p>AI-Powered Documentation Generator</p>
-        <p>Document created: {timestamp}</p>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
     </div>
 </body>
 </html>"""
+            
+            # Write HTML to file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(full_html)
+                
+            return output_path
+            
+        except ImportError as e:
+            raise ImportError(f"Failed to create HTML: Required package not installed. Install markdown package. Error: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Failed to create HTML: {str(e)}")
+    
+    def export_to_txt(self, content: str, output_path: str) -> str:
+        """
+        Convert markdown content to a well-formatted plain text document
+        
+        Args:
+            content: Markdown content to convert
+            output_path: Where to save the TXT file
+            
+        Returns:
+            str: Path to the generated TXT file
+        """
+        try:
+            # Get document title
+            title = "CODE DOCUMENTATION"
+            title_match = re.search(r'^# (.+)$', content, re.MULTILINE)
+            if title_match:
+                title = title_match.group(1).upper()
+            
+            # Initialize output lines
+            output_lines = []
+            
+            # Add header with borders (more compact)
+            border = "=" * 80
+            output_lines.append(border)
+            output_lines.append(title.center(80))
+            output_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}".center(80))
+            # Removed branding line
+            output_lines.append(border)
+            output_lines.append("")  # Single blank line
+            
+            # Process content by lines
+            lines = content.split('\n')
+            in_code = False
+            code_block = []
+            
+            for line in lines:
+                # Handle code blocks
+                if line.startswith('```'):
+                    if in_code:
+                        # End code block with formatted border
+                        output_lines.append("-" * 80)
+                        for code_line in code_block:
+                            output_lines.append("    " + code_line)
+                        output_lines.append("-" * 80)
+                        output_lines.append("")
+                        code_block = []
+                    else:
+                        # Start code block - get language if specified
+                        lang = line[3:].strip()
+                        if lang:
+                            output_lines.append(f"[Code: {lang}]")
+                    in_code = not in_code
+                    continue
+                
+                if in_code:
+                    code_block.append(line)
+                    continue
+                
+                # Handle headings with different formatting levels
+                if line.startswith('# '):
+                    output_lines.append("")
+                    text = line[2:].strip()
+                    output_lines.append(text.upper())
+                    output_lines.append("=" * len(text))
+                    output_lines.append("")
+                elif line.startswith('## '):
+                    output_lines.append("")
+                    text = line[3:].strip()
+                    output_lines.append(text)
+                    output_lines.append("-" * len(text))
+                    output_lines.append("")
+                elif line.startswith('### '):
+                    output_lines.append("")
+                    output_lines.append(line[4:].strip())
+                    output_lines.append("")
+                elif line.startswith('#### '):
+                    output_lines.append("")
+                    output_lines.append(line[5:].strip())
+                    output_lines.append("")
+                
+                # Handle list items
+                elif re.match(r'^\s*[*-]\s', line):
+                    indent = len(re.match(r'^\s*', line).group())
+                    text = re.sub(r'^\s*[*-]\s+', '', line)
+                    # Clean markdown formatting
+                    text = re.sub(r'`([^`]+)`', r'\1', text)  # Remove code marks
+                    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove bold
+                    text = re.sub(r'\*([^*]+)\*', r'\1', text)  # Remove italic
+                    output_lines.append(" " * indent + "- " + text)
+                
+                # Regular paragraphs
+                elif line.strip():
+                    # Clean markdown formatting
+                    line = re.sub(r'`([^`]+)`', r'\1', line)  # Remove code marks
+                    line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)  # Remove bold
+                    line = re.sub(r'\*([^*]+)\*', r'\1', line)  # Remove italic
+                    
+                    # Wrap text for better readability (max 80 chars)
+                    words = line.split()
+                    current_line = ""
+                    for word in words:
+                        if len(current_line) + len(word) + 1 > 80:
+                            output_lines.append(current_line)
+                            current_line = word
+                        else:
+                            if current_line:
+                                current_line += " " + word
+                            else:
+                                current_line = word
+                    
+                    if current_line:
+                        output_lines.append(current_line)
+                
+                # Add a blank line for empty markdown lines to preserve paragraph structure
+                elif not line.strip():
+                    output_lines.append("")
+            
+            # Add footer (more compact)
+            output_lines.append("")
+            output_lines.append(border)
+            output_lines.append("End of documentation".center(80))
+            output_lines.append(border)
+            
+            # Write to file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(output_lines))
+            
+            return output_path
+            
+        except Exception as e:
+            raise Exception(f"Failed to create TXT: {str(e)}")
     
     @staticmethod
     def create_temporary_file(content: str, export_format: str, filename: str = None) -> str:
@@ -597,1282 +1141,101 @@ class DocumentExporter:
             
         Returns:
             str: Path to the created temporary file
-        """        # Create temp directory if it doesn't exist
-        temp_dir = os.path.join('media', 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Generate a temporary filename
-        if not filename:
-            timestamp = int(time.time())
-            filename = f"documentation_export_{timestamp}"
-        
-        temp_filename = f"{filename}.{export_format}"
-        temp_path = os.path.join(temp_dir, temp_filename)
-        
-        converter = MarkdownConverter()
-        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if export_format == 'html':
-            # Convert markdown to HTML with professional formatting
-            html_content = DocumentExporter._generate_professional_html(content)
             
-            # Generate table of contents
-            toc_html = DocumentExporter._generate_html_toc(content)
-            
-            template = DocumentExporter.get_html_template()
-            full_html = template.format(
-                content=html_content, 
-                timestamp=current_time,
-                toc=toc_html
-            )
-            
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(full_html)
-                
-        elif export_format == 'txt':
-            # Convert to clean plain text
-            text_content = converter.markdown_to_plain_text(content)
-            header = f"CODE DOCUMENTATION\nGenerated on: {current_time}\n{'='*50}\n\n"
-            
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(header + text_content)
-                
-        elif export_format == 'md':
-            # Keep as markdown with header
-            header = f"""# Code Documentation
+        Raises:
+            ImportError: If required packages are not installed
+            Exception: If document generation fails
+        """
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info(f"DocumentationGenerator: Starting temp file creation. Format: {export_format}")
+            logger.info(f"DocumentationGenerator: Content length: {len(content) if content else 0}")
+            logger.info(f"DocumentationGenerator: Using filename: {filename}")
 
-**Generated on:** {current_time}
-
----
-
-"""
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(header + content)
+            # Validate content
+            if not content:
+                raise ValueError("Content cannot be empty")
+            if not isinstance(content, str):
+                raise ValueError(f"Content must be a string, got {type(content)}")
                 
-        elif export_format == 'docx':
-            # Create a professional RTF format that looks great in Word
-            temp_path = temp_path.replace('.docx', '.rtf')
+            # Validate format
+            if not export_format:
+                raise ValueError("Export format is required")
+            if not isinstance(export_format, str):
+                raise ValueError(f"Export format must be a string, got {type(export_format)}")
+            if export_format not in ['pdf', 'html', 'md', 'txt', 'docx']:
+                raise ValueError(f"Unsupported format: {export_format}")
+
+            # Create temp directory if it doesn't exist
+            temp_dir = os.path.join('media', 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
             
-            # Generate professional RTF content
-            rtf_content = DocumentExporter._generate_professional_rtf(content, current_time)
-            
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(rtf_content)
-        elif export_format == 'pdf':
+            # Generate temporary filename
+            if not filename:
+                timestamp = int(time.time())
+                filename = f"documentation_export_{timestamp}"
+            elif not isinstance(filename, str):
+                raise ValueError(f"Filename must be a string, got {type(filename)}")
+        
+            temp_filename = f"{filename}.{export_format}"
+            temp_path = os.path.join(temp_dir, temp_filename)
+        
             try:
-                # Import reportlab packages with proper error handling
-                from reportlab.lib.pagesizes import A4
-                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted, PageBreak, Table, TableStyle
-                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                from reportlab.lib.units import inch, cm
-                from reportlab.lib import colors
-                from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
-                import re
-                
-                # Create PDF document with professional margins
-                doc = SimpleDocTemplate(
-                    temp_path, 
-                    pagesize=A4,
-                    topMargin=2.5*cm,
-                    bottomMargin=2.5*cm,
-                    leftMargin=2*cm,
-                    rightMargin=2*cm,
-                    title="Code Documentation"
-                )
-                
-                styles = getSampleStyleSheet()
-                
-                # Professional custom styles
-                title_style = ParagraphStyle(
-                    'ProfessionalTitle',
-                    parent=styles['Title'],
-                    fontSize=28,
-                    spaceAfter=30,
-                    spaceBefore=20,
-                    textColor=colors.HexColor('#1e40af'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica-Bold'
-                )
-                
-                body_style = ParagraphStyle(
-                    'ProfessionalBody',
-                    parent=styles['Normal'],
-                    fontSize=11,
-                    spaceAfter=8,
-                    spaceBefore=4,
-                    textColor=colors.HexColor('#374151'),
-                    alignment=TA_JUSTIFY,
-                    fontName='Helvetica',
-                    leading=14
-                )
-                
-                code_style = ParagraphStyle(
-                    'ProfessionalCode',
-                    parent=styles['Code'],
-                    fontSize=9,
-                    fontName='Courier-Bold',
-                    textColor=colors.HexColor('#1f2937'),
-                    backColor=colors.HexColor('#f3f4f6'),
-                    borderWidth=1,
-                    borderColor=colors.HexColor('#d1d5db'),
-                    borderPadding=10,
-                    spaceAfter=12,
-                    spaceBefore=8,
-                    leftIndent=20,
-                    rightIndent=20
-                )
-                
-                story = []
-                
-                # Add title page
-                story.append(Spacer(1, 1.5*inch))
-                story.append(Paragraph("Code Documentation", title_style))
-                story.append(Spacer(1, 0.3*inch))
-                story.append(Paragraph(f"Generated on {current_time}", body_style))
-                story.append(PageBreak())
-                
-                # Process markdown content
-                lines = content.split('\n')
-                for line in lines:
-                    line = line.rstrip()
-                    
-                    if line.startswith('# '):
-                        # H1 - Main heading
-                        heading_text = line[2:].strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, title_style))
-                            story.append(Spacer(1, 12))
-                    elif line.startswith('## '):
-                        # H2 - Section heading
-                        heading_text = line[3:].strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, body_style))
-                            story.append(Spacer(1, 8))
-                    elif line.strip():
-                        # Regular paragraph
-                        try:
-                            story.append(Paragraph(line.strip(), body_style))
-                            story.append(Spacer(1, 6))
-                        except Exception as e:
-                            # Skip problematic lines
-                            print(f"Warning: Could not format line: {e}")
-                            continue
-                    else:
-                        # Empty line - add spacing
-                        story.append(Spacer(1, 6))
-                
-                # Build the PDF
-                doc.build(story)
-                
-            except ImportError as e:
-                print(f"ReportLab not available: {e}, falling back to HTML")
-                # Fallback to HTML if reportlab fails
-                html_content = converter.markdown_to_html(content)
-                template = DocumentExporter.get_html_template()
-                full_html = template.format(content=html_content, timestamp=current_time, toc="")
-                
-                temp_path = temp_path.replace('.pdf', '_printable.html')
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    f.write(full_html)
-            
-            except Exception as e:
-                print(f"PDF generation failed: {e}, falling back to HTML")
-                html_content = converter.markdown_to_html(content)
-                template = DocumentExporter.get_html_template()
-                full_html = template.format(content=html_content, timestamp=current_time, toc="")
-                
-                temp_path = temp_path.replace('.pdf', '_printable.html')
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    f.write(full_html)
-                    
-        else:
-            # Default to markdown
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-        
-        return temp_path
-                doc = SimpleDocTemplate(
-                    temp_path, 
-                    pagesize=A4,
-                    topMargin=2.5*cm,
-                    bottomMargin=2.5*cm,
-                    leftMargin=2*cm,
-                    rightMargin=2*cm,
-                    title="Code Documentation"
-                )
-                
-                styles = getSampleStyleSheet()
-                
-                # Professional custom styles
-                title_style = ParagraphStyle(
-                    'ProfessionalTitle',
-                    parent=styles['Title'],
-                    fontSize=28,
-                    spaceAfter=30,
-                    spaceBefore=20,
-                    textColor=colors.HexColor('#1e40af'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica-Bold'
-                )
-                
-                subtitle_style = ParagraphStyle(
-                    'Subtitle',
-                    parent=styles['Normal'],
-                    fontSize=12,
-                    spaceAfter=20,
-                    textColor=colors.HexColor('#6b7280'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica'
-                )
-                
-                heading1_style = ParagraphStyle(
-                    'ProfessionalH1',
-                    parent=styles['Heading1'],
-                    fontSize=20,
-                    spaceAfter=15,
-                    spaceBefore=25,
-                    textColor=colors.HexColor('#1e40af'),
-                    fontName='Helvetica-Bold',
-                    borderWidth=2,
-                    borderColor=colors.HexColor('#3b82f6'),
-                    borderPadding=8,
-                    backColor=colors.HexColor('#eff6ff'),
-                    leftIndent=0,
-                    rightIndent=0
-                )
-                
-                heading2_style = ParagraphStyle(
-                    'ProfessionalH2',
-                    parent=styles['Heading2'],
-                    fontSize=16,
-                    spaceAfter=12,
-                    spaceBefore=18,
-                    textColor=colors.HexColor('#1e40af'),
-                    fontName='Helvetica-Bold',
-                    borderWidth=1,
-                    borderColor=colors.HexColor('#cbd5e1'),
-                    borderPadding=5,
-                    backColor=colors.HexColor('#f8fafc')
-                )
-                
-                heading3_style = ParagraphStyle(
-                    'ProfessionalH3',
-                    parent=styles['Heading3'],
-                    fontSize=14,
-                    spaceAfter=10,
-                    spaceBefore=15,
-                    textColor=colors.HexColor('#3730a3'),
-                    fontName='Helvetica-Bold'
-                )
-                
-                body_style = ParagraphStyle(
-                    'ProfessionalBody',
-                    parent=styles['Normal'],
-                    fontSize=11,
-                    spaceAfter=8,
-                    spaceBefore=4,
-                    textColor=colors.HexColor('#374151'),
-                    alignment=TA_JUSTIFY,
-                    fontName='Helvetica',
-                    leading=14
-                )
-                
-                code_style = ParagraphStyle(
-                    'ProfessionalCode',
-                    parent=styles['Code'],
-                    fontSize=9,
-                    fontName='Courier-Bold',
-                    textColor=colors.HexColor('#1f2937'),
-                    backColor=colors.HexColor('#f3f4f6'),
-                    borderWidth=1,
-                    borderColor=colors.HexColor('#d1d5db'),
-                    borderPadding=10,
-                    spaceAfter=12,
-                    spaceBefore=8,
-                    leftIndent=20,
-                    rightIndent=20
-                )
-                
-                list_style = ParagraphStyle(
-                    'ProfessionalList',
-                    parent=styles['Normal'],
-                    fontSize=11,
-                    spaceAfter=4,
-                    spaceBefore=2,
-                    textColor=colors.HexColor('#374151'),
-                    fontName='Helvetica',
-                    leftIndent=20,
-                    bulletIndent=10
-                )
-                
-                story = []
-                
-                # Professional title page
-                story.append(Spacer(1, 1.5*inch))
-                story.append(Paragraph("Code Documentation", title_style))
-                story.append(Spacer(1, 0.3*inch))
-                story.append(Paragraph(f"Generated on {current_time}", subtitle_style))
-                story.append(Spacer(1, 0.2*inch))
-                story.append(Paragraph("CodeDocGen - AI-Powered Documentation Generator", subtitle_style))
-                
-                # Add a professional separator
-                separator_data = [['', '', '']]
-                separator_table = Table(separator_data, colWidths=[6*cm, 1*cm, 6*cm])
-                separator_table.setStyle(TableStyle([
-                    ('LINEBELOW', (0, 0), (0, 0), 2, colors.HexColor('#3b82f6')),
-                    ('LINEBELOW', (2, 0), (2, 0), 2, colors.HexColor('#3b82f6')),
-                ]))
-                story.append(Spacer(1, 1*inch))
-                story.append(separator_table)
-                story.append(PageBreak())
-                
-                # Add Table of Contents
-                headings = DocumentExporter._extract_headings(content)
-                if headings:
-                    toc_title_style = ParagraphStyle(
-                        'TOCTitle',
-                        parent=styles['Heading1'],
-                        fontSize=18,
-                        textColor=colors.HexColor('#1e40af'),
-                        spaceAfter=20,
-                        alignment=TA_CENTER,
-                        fontName='Helvetica-Bold'
-                    )
-                    
-                    toc_entry_style = ParagraphStyle(
-                        'TOCEntry',
-                        parent=styles['Normal'],
-                        fontSize=11,
-                        textColor=colors.HexColor('#374151'),
-                        spaceAfter=6,
-                        fontName='Helvetica'
-                    )
-                    
-                    story.append(Paragraph("Table of Contents", toc_title_style))
-                    story.append(Spacer(1, 0.3*inch))
-                    
-                    for heading in headings:
-                        indent = "    " * (heading['level'] - 1)
-                        entry_text = f"{indent}{heading['text']}"
-                        story.append(Paragraph(entry_text, toc_entry_style))
-                    
-                    story.append(PageBreak())
-                
-                # Process markdown content with advanced formatting
-                lines = content.split('\n')
-                current_code_block = []
-                in_code_block = False
-                code_language = ""
-                current_list_items = []
-                in_list = False
-                list_counter = 0
-                
-                for line in lines:
-                    line = line.rstrip()
-                    
-                    # Handle code blocks
-                    if line.startswith('```'):
-                        if in_code_block:
-                            # End code block
-                            if current_code_block:
-                                try:
-                                    code_text = '\n'.join(current_code_block)
-                                    # Add language label if available
-                                    if code_language:
-                                        lang_label = f"<b><font color='#1e40af'>{code_language.upper()} Code:</font></b>"
-                                        story.append(Paragraph(lang_label, body_style))
-                                        story.append(Spacer(1, 5))
-                                    
-                                    # Format code with proper escaping
-                                    code_text = code_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                    story.append(Preformatted(code_text, code_style))
-                                    story.append(Spacer(1, 8))
-                                except Exception as e:
-                                    print(f"Warning: Could not format code block: {e}")
-                                    # Add plain text version as fallback
-                                    story.append(Paragraph("<i>Code block omitted due to formatting issues</i>", body_style))
-                                    story.append(Spacer(1, 8))
-                            
-                            current_code_block = []
-                            in_code_block = False
-                            code_language = ""
-                        else:
-                            # Start code block
-                            in_code_block = True
-                            if len(line) > 3:
-                                code_language = line[3:].strip()
-                        continue
-                    
-                    if in_code_block:
-                        current_code_block.append(line)
-                        continue
-                    
-                    # Handle different markdown elements
-                    if line.startswith('# '):
-                        # H1 - Main heading
-                        heading_text = line[2:].strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, heading1_style))
-                            story.append(Spacer(1, 5))
-                    
-                    elif line.startswith('## '):
-                        # H2 - Section heading
-                        heading_text = line[3:].strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, heading2_style))
-                            story.append(Spacer(1, 4))
-                    
-                    elif line.startswith('### '):
-                        # H3 - Subsection heading
-                        heading_text = line[4:].strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, heading3_style))
-                            story.append(Spacer(1, 3))
-                    
-                    elif line.startswith('#### ') or line.startswith('##### ') or line.startswith('###### '):
-                        # H4, H5, H6
-                        heading_text = re.sub(r'^#+\s*', '', line).strip()
-                        if heading_text:
-                            story.append(Paragraph(heading_text, heading3_style))
-                            story.append(Spacer(1, 3))
-                    
-                    elif line.startswith('- ') or line.startswith('* ') or line.startswith('+ '):
-                        # Bullet points
-                        item_text = line[2:].strip()
-                        if item_text:
-                            try:
-                                # Handle inline formatting with proper error handling
-                                formatted_text = DocumentExporter._format_inline_text(item_text)
-                                bullet_text = f"• {formatted_text}"
-                                story.append(Paragraph(bullet_text, list_style))
-                            except Exception as e:
-                                # Fallback for problematic list items
-                                print(f"Warning: Could not format list item: {e}")
-                                # Use plaintext as fallback
-                                plain_text = item_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                bullet_text = f"• {plain_text}"
-                                story.append(Paragraph(bullet_text, list_style))
-                    
-                    elif re.match(r'^\d+\.\s+', line):
-                        # Numbered lists
-                        item_text = re.sub(r'^\d+\.\s+', '', line).strip()
-                        if item_text:
-                            try:
-                                # Handle inline formatting with proper error handling
-                                formatted_text = DocumentExporter._format_inline_text(item_text)
-                                list_counter += 1
-                                numbered_text = f"{list_counter}. {formatted_text}"
-                                story.append(Paragraph(numbered_text, list_style))
-                            except Exception as e:
-                                # Fallback for problematic list items
-                                print(f"Warning: Could not format numbered list item: {e}")
-                                # Use plaintext as fallback
-                                plain_text = item_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                numbered_text = f"{list_counter}. {plain_text}"
-                                story.append(Paragraph(numbered_text, list_style))
-                    
-                    elif line.startswith('>'):
-                        # Blockquotes
-                        quote_text = line[1:].strip()
-                        if quote_text:
-                            try:
-                                quote_text = DocumentExporter._format_inline_text(quote_text)
-                                quote_style = ParagraphStyle(
-                                    'Quote',
-                                    parent=body_style,
-                                    leftIndent=30,
-                                    borderWidth=1,
-                                    borderColor=colors.HexColor('#3b82f6'),
-                                    borderPadding=10,
-                                    backColor=colors.HexColor('#eff6ff'),
-                                    fontName='Helvetica-Oblique'
-                                )
-                                story.append(Paragraph(f'"{quote_text}"', quote_style))
-                                story.append(Spacer(1, 6))
-                            except Exception as e:
-                                # Fallback for problematic blockquotes
-                                print(f"Warning: Could not format blockquote: {e}")
-                                plain_text = quote_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                story.append(Paragraph(f'"{plain_text}"', quote_style))
-                                story.append(Spacer(1, 6))
-                    
-                    elif line.strip():
-                        # Regular paragraph
-                        para_text = line.strip()
-                        if para_text:
-                            # Handle special characters and formatting safely
-                            try:
-                                formatted_text = DocumentExporter._format_inline_text(para_text)
-                                story.append(Paragraph(formatted_text, body_style))
-                                story.append(Spacer(1, 3))
-                            except Exception as e:
-                                # Fallback for problematic paragraphs
-                                print(f"Warning: Could not format paragraph: {e}")
-                                # Use plaintext as fallback
-                                plain_text = para_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                story.append(Paragraph(plain_text, body_style))
-                                story.append(Spacer(1, 3))
-                    
-                    else:
-                        # Empty line - add spacing
-                        story.append(Spacer(1, 8))
-                
-                # Handle any remaining code block
-                if in_code_block and current_code_block:
-                    code_text = '\n'.join(current_code_block)
-                    if code_language:
-                        lang_label = f"<b><font color='#1e40af'>{code_language.upper()} Code:</font></b>"
-                        story.append(Paragraph(lang_label, body_style))
-                        story.append(Spacer(1, 5))
-                    code_text = code_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    story.append(Preformatted(code_text, code_style))
-                
-                # Professional footer page
-                story.append(PageBreak())
-                story.append(Spacer(1, 2*inch))
-                
-                footer_style = ParagraphStyle(
-                    'Footer',
-                    parent=styles['Normal'],
-                    fontSize=10,
-                    textColor=colors.HexColor('#6b7280'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica'
-                )
-                
-                story.append(Paragraph("Generated by CodeDocGen", footer_style))
-                story.append(Spacer(1, 0.2*inch))
-                story.append(Paragraph("AI-Powered Documentation Generator", footer_style))
-                story.append(Spacer(1, 0.3*inch))
-                story.append(Paragraph(f"Document created: {current_time}", footer_style))
-                
-                # Build the professional PDF
-                doc.build(story)
-                
-            except ImportError as e:
-                print(f"ReportLab not available: {e}, falling back to HTML")
-                # Log detailed error for production debugging
-                import logging
-                logging.error(f"PDF generation ImportError: {e}")
-                
-                # Generate HTML TOC as fallback
-                toc_html = ""
-                headings = DocumentExporter._extract_headings(content)
-                if headings:
-                    toc_html = "<div class='toc'><h2>Table of Contents</h2><ul>"
-                    for heading in headings:
-                        indent = "&nbsp;&nbsp;" * (heading['level'] - 1)
-                        toc_html += f"<li>{indent}<a href='#{heading['anchor']}'>{heading['text']}</a></li>"
-                    toc_html += "</ul></div>"
-                
-                # Fallback to HTML if reportlab fails
-                html_content = converter.markdown_to_html(content)
-                template = DocumentExporter.get_html_template()
-                full_html = template.format(content=html_content, timestamp=current_time, toc=toc_html)            
-                temp_path = temp_path.replace('.pdf', '_printable.html')
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    f.write(full_html)
-            
-            except Exception as e:
-                print(f"PDF generation failed: {e}, falling back to HTML")
-                # Log detailed error stack trace for production debugging
-                import traceback
-                import logging
-                logging.error(f"PDF generation error: {e}")
-                logging.error(traceback.format_exc())
-                
-                # Create simplified HTML as a robust fallback
+                # Create generator with better error handling
                 try:
-                    # Generate HTML TOC as fallback
-                    toc_html = ""
-                    headings = DocumentExporter._extract_headings(content)
-                    if headings:
-                        toc_html = "<div class='toc'><h2>Table of Contents</h2><ul>"
-                        for heading in headings:
-                            indent = "&nbsp;&nbsp;" * (heading['level'] - 1)
-                            toc_html += f"<li>{indent}<a href='#{heading['anchor']}'>{heading['text']}</a></li>"
-                        toc_html += "</ul></div>"
-                    
-                    html_content = converter.markdown_to_html(content)
-                    template = DocumentExporter.get_html_template()
-                    full_html = template.format(content=html_content, timestamp=current_time, toc=toc_html)
-                    
-                    # Save as HTML with PDF-ready styling
-                    temp_path = temp_path.replace('.pdf', '_printable.html')
-                    with open(temp_path, 'w', encoding='utf-8') as f:
-                        f.write(full_html)
-                except Exception as fallback_error:
-                    # Ultimate fallback if even HTML generation fails
-                    logging.error(f"HTML fallback also failed: {fallback_error}")
-                    
-                        # Create a minimal HTML file
-                    minimal_html = f"""<!DOCTYPE html>
-<html>
-<head><title>Documentation</title></head>
-<body>
-<h1>Code Documentation</h1>
-<p>Generated on {current_time}</p>
-<p>Error converting to PDF. Please try different format.</p>
-<pre>{content[:1000]}...</pre>
-</body>
-</html>"""
-                    
-                    temp_path = temp_path.replace('.pdf', '_error.html')
-                    with open(temp_path, 'w', encoding='utf-8') as f:
-                        f.write(minimal_html)
-                doc = SimpleDocTemplate(
-                    temp_path, 
-                    pagesize=A4,
-                    topMargin=2.5*cm,
-                    bottomMargin=2.5*cm,
-                    leftMargin=2*cm,
-                    rightMargin=2*cm,
-                    title="Code Documentation"
-                )
+                    generator = DocumentationGenerator()
+                except Exception as init_error:
+                    logger.error(f"Error initializing DocumentationGenerator: {str(init_error)}")
+                    raise Exception(f"Failed to initialize document generator: {str(init_error)}")
                 
-                styles = getSampleStyleSheet()
-                
-                # Professional custom styles
-                title_style = ParagraphStyle(
-                    'ProfessionalTitle',
-                    parent=styles['Title'],
-                    fontSize=28,
-                    spaceAfter=30,
-                    spaceBefore=20,
-                    textColor=colors.HexColor('#1e40af'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica-Bold'
-                )
-                
-                subtitle_style = ParagraphStyle(
-                    'Subtitle',
-                    parent=styles['Normal'],
-                    fontSize=12,
-                    spaceAfter=20,
-                    textColor=colors.HexColor('#6b7280'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica'
-                )
-                
-                heading1_style = ParagraphStyle(
-                    'ProfessionalH1',
-                    parent=styles['Heading1'],
-                    fontSize=20,
-                    spaceAfter=15,
-                    spaceBefore=25,
-                    textColor=colors.HexColor('#1e40af'),
-                    fontName='Helvetica-Bold',
-                    borderWidth=2,
-                    borderColor=colors.HexColor('#3b82f6'),
-                    borderPadding=8,
-                    backColor=colors.HexColor('#eff6ff'),
-                    leftIndent=0,
-                    rightIndent=0
-                )
-                
-                heading2_style = ParagraphStyle(
-                    'ProfessionalH2',
-                    parent=styles['Heading2'],
-                    fontSize=16,
-                    spaceAfter=12,
-                    spaceBefore=18,
-                    textColor=colors.HexColor('#1e40af'),
-                    fontName='Helvetica-Bold',
-                    borderWidth=1,
-                    borderColor=colors.HexColor('#cbd5e1'),
-                    borderPadding=5,
-                    backColor=colors.HexColor('#f8fafc')
-                )
-                
-                heading3_style = ParagraphStyle(
-                    'ProfessionalH3',
-                    parent=styles['Heading3'],
-                    fontSize=14,
-                    spaceAfter=10,
-                    spaceBefore=15,
-                    textColor=colors.HexColor('#3730a3'),
-                    fontName='Helvetica-Bold'
-                )
-                
-                body_style = ParagraphStyle(
-                    'ProfessionalBody',
-                    parent=styles['Normal'],
-                    fontSize=11,
-                    spaceAfter=8,
-                    spaceBefore=4,
-                    textColor=colors.HexColor('#374151'),
-                    alignment=TA_JUSTIFY,
-                    fontName='Helvetica',
-                    leading=14
-                )
-                
-                code_style = ParagraphStyle(
-                    'ProfessionalCode',
-                    parent=styles['Code'],
-                    fontSize=9,
-                    fontName='Courier-Bold',
-                    textColor=colors.HexColor('#1f2937'),
-                    backColor=colors.HexColor('#f3f4f6'),
-                    borderWidth=1,
-                    borderColor=colors.HexColor('#d1d5db'),
-                    borderPadding=10,
-                    spaceAfter=12,
-                    spaceBefore=8,
-                    leftIndent=20,
-                    rightIndent=20
-                )
-                
-                list_style = ParagraphStyle(
-                    'ProfessionalList',
-                    parent=styles['Normal'],
-                    fontSize=11,
-                    spaceAfter=4,
-                    spaceBefore=2,
-                    textColor=colors.HexColor('#374151'),
-                    fontName='Helvetica',
-                    leftIndent=20,
-                    bulletIndent=10
-                )
-                
-                story = []
-                
-                # Professional title page
-                story.append(Spacer(1, 1.5*inch))
-                story.append(Paragraph("Code Documentation", title_style))
-                story.append(Spacer(1, 0.3*inch))
-                story.append(Paragraph(f"Generated on {current_time}", subtitle_style))
-                story.append(Spacer(1, 0.2*inch))
-                story.append(Paragraph("CodeDocGen - AI-Powered Documentation Generator", subtitle_style))
-                
-                # Add a professional separator
-                separator_data = [['', '', '']]
-                separator_table = Table(separator_data, colWidths=[6*cm, 1*cm, 6*cm])
-                separator_table.setStyle(TableStyle([
-                    ('LINEBELOW', (0, 0), (0, 0), 2, colors.HexColor('#3b82f6')),
-                    ('LINEBELOW', (2, 0), (2, 0), 2, colors.HexColor('#3b82f6')),
-                ]))
-                story.append(Spacer(1, 1*inch))
-                story.append(separator_table)
-                story.append(PageBreak())
-                
-                # Add Table of Contents
-                headings = DocumentExporter._extract_headings(content)
-                if headings:
-                    toc_title_style = ParagraphStyle(
-                        'TOCTitle',
-                        parent=styles['Heading1'],
-                        fontSize=18,
-                        textColor=colors.HexColor('#1e40af'),
-                        spaceAfter=20,
-                        alignment=TA_CENTER,
-                        fontName='Helvetica-Bold'
-                    )
-                    
-                    toc_entry_style = ParagraphStyle(
-                        'TOCEntry',
-                        parent=styles['Normal'],
-                        fontSize=11,
-                        textColor=colors.HexColor('#374151'),
-                        spaceAfter=6,
-                        fontName='Helvetica'
-                    )
-                    
-                    story.append(Paragraph("Table of Contents", toc_title_style))
-                    story.append(Spacer(1, 0.3*inch))
-                    
-                    for heading in headings:
-                        indent = "    " * (heading['level'] - 1)
-                        entry_text = f"{indent}{heading['text']}"
-                        story.append(Paragraph(entry_text, toc_entry_style))
-                    
-                    story.append(PageBreak())
-                
-                # Process markdown content with advanced formatting
-                lines = content.split('\n')
-                current_code_block = []
-                in_code_block = False
-                code_language = ""
-                current_list_items = []
-                in_list = False
-                list_counter = 0
-                
-                for i, line in enumerate(lines):
-                    line = line.rstrip()
-                    
-                    # Handle code blocks
-                    if line.startswith('```'):
-                        if in_code_block:
-                            # End code block
-                            if current_code_block:
-                                try:
-                                    code_text = '\n'.join(current_code_block)
-                                    # Add language label if available
-                                    if code_language:
-                                        lang_label = f"<b><font color='#1e40af'>{code_language.upper()} Code:</font></b>"
-                                        story.append(Paragraph(lang_label, body_style))
-                                        story.append(Spacer(1, 5))
-                                    
-                                    # Format code with proper escaping
-                                    code_text = code_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                                    story.append(Preformatted(code_text, code_style))
-                                    story.append(Spacer(1, 8))
-                                except Exception as e:
-                                    print(f"Warning: Could not format code block: {e}")
-                                    # Add plain text version as fallback
-                                    story.append(Paragraph("<i>Code block omitted due to formatting issues</i>", body_style))
-                                    story.append(Spacer(1, 8))
-                            
-                            current_code_block = []
-                            in_code_block = False
-                            code_language = ""
-                        else:
-                            # Start code block
-                            in_code_block = True
-                            if len(line) > 3:
-                                code_language = line[3:].strip()
-                        continue
-                    
-                    if in_code_block:
-                        current_code_block.append(line)
-                        continue
-            
-            # Handle different markdown elements
-            if line.startswith('# '):
-                # H1 - Main heading
-                heading_text = line[2:].strip()
-                if heading_text:
-                    story.append(Paragraph(heading_text, heading1_style))
-                    story.append(Spacer(1, 5))
-            
-            elif line.startswith('## '):
-                # H2 - Section heading
-                heading_text = line[3:].strip()
-                if heading_text:
-                    story.append(Paragraph(heading_text, heading2_style))
-                    story.append(Spacer(1, 4))
-            
-            elif line.startswith('### '):
-                # H3 - Subsection heading
-                heading_text = line[4:].strip()
-                if heading_text:
-                    story.append(Paragraph(heading_text, heading3_style))
-                    story.append(Spacer(1, 3))
-            
-            elif line.startswith('#### ') or line.startswith('##### ') or line.startswith('###### '):
-                # H4, H5, H6
-                heading_text = re.sub(r'^#+\s*', '', line).strip()
-                if heading_text:
-                    story.append(Paragraph(heading_text, heading3_style))
-                    story.append(Spacer(1, 3))
-            
-            elif line.startswith('- ') or line.startswith('* ') or line.startswith('+ '):
-                # Bullet points
-                item_text = line[2:].strip()
-                if item_text:
+                if export_format == 'pdf':
                     try:
-                        # Handle inline formatting with proper error handling
-                        formatted_text = DocumentExporter._format_inline_text(item_text)
-                        bullet_text = f"• {formatted_text}"
-                        story.append(Paragraph(bullet_text, list_style))
+                        return generator.export_to_pdf(content, temp_path)
                     except Exception as e:
-                        # Fallback for problematic list items
-                        print(f"Warning: Could not format list item: {e}")
-                        # Use plaintext as fallback
-                        plain_text = item_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        bullet_text = f"• {plain_text}"
-                        story.append(Paragraph(bullet_text, list_style))
-            
-            elif re.match(r'^\d+\.\s+', line):
-                # Numbered lists
-                item_text = re.sub(r'^\d+\.\s+', '', line).strip()
-                if item_text:
+                        logger.error(f"DocumentationGenerator: Error in PDF export - {str(e)}")
+                        raise Exception(f"Failed to create PDF file: {str(e)}")
+                    
+                elif export_format == 'docx':
                     try:
-                        # Handle inline formatting with proper error handling
-                        formatted_text = DocumentExporter._format_inline_text(item_text)
-                        list_counter += 1
-                        numbered_text = f"{list_counter}. {formatted_text}"
-                        story.append(Paragraph(numbered_text, list_style))
+                        return generator.export_to_docx(content, temp_path)
                     except Exception as e:
-                        # Fallback for problematic list items
-                        print(f"Warning: Could not format numbered list item: {e}")
-                        # Use plaintext as fallback
-                        plain_text = item_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        numbered_text = f"{list_counter}. {plain_text}"
-                        story.append(Paragraph(numbered_text, list_style))
-            
-            elif line.startswith('>'):
-                # Blockquotes
-                quote_text = line[1:].strip()
-                if quote_text:
+                        logger.error(f"DocumentationGenerator: Error in DOCX export - {str(e)}")
+                        raise Exception(f"Failed to create DOCX file: {str(e)}")
+                    
+                elif export_format == 'html':
                     try:
-                        quote_text = DocumentExporter._format_inline_text(quote_text)
-                        quote_style = ParagraphStyle(
-                            'Quote',
-                            parent=body_style,
-                            leftIndent=30,
-                            borderWidth=1,
-                            borderColor=colors.HexColor('#3b82f6'),
-                            borderPadding=10,
-                            backColor=colors.HexColor('#eff6ff'),
-                            fontName='Helvetica-Oblique'
-                        )
-                        story.append(Paragraph(f'"{quote_text}"', quote_style))
-                        story.append(Spacer(1, 6))
+                        return generator.export_to_html(content, temp_path)
                     except Exception as e:
-                        # Fallback for problematic blockquotes
-                        print(f"Warning: Could not format blockquote: {e}")
-                        plain_text = quote_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        story.append(Paragraph(f'"{plain_text}"', quote_style))
-                        story.append(Spacer(1, 6))
-            
-            elif line.strip():
-                # Regular paragraph
-                para_text = line.strip()
-                if para_text:
-                    # Handle special characters and formatting safely
-                    try:
-                        formatted_text = DocumentExporter._format_inline_text(para_text)
-                        story.append(Paragraph(formatted_text, body_style))
-                        story.append(Spacer(1, 3))
-                    except Exception as e:
-                        # Fallback for problematic paragraphs
-                        print(f"Warning: Could not format paragraph: {e}")
-                        # Use plaintext as fallback
-                        plain_text = para_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        story.append(Paragraph(plain_text, body_style))
-                        story.append(Spacer(1, 3))
-                    
-                    else:
-                        # Empty line - add spacing
-                        story.append(Spacer(1, 8))
-                
-                # Handle any remaining code block
-                if in_code_block and current_code_block:
-                    code_text = '\n'.join(current_code_block)
-                    if code_language:
-                        lang_label = f"<b><font color='#1e40af'>{code_language.upper()} Code:</font></b>"
-                        story.append(Paragraph(lang_label, body_style))
-                        story.append(Spacer(1, 5))
-                    code_text = code_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    story.append(Preformatted(code_text, code_style))
-                
-                # Professional footer page
-                story.append(PageBreak())
-                story.append(Spacer(1, 2*inch))
-                
-                footer_style = ParagraphStyle(
-                    'Footer',
-                    parent=styles['Normal'],
-                    fontSize=10,
-                    textColor=colors.HexColor('#6b7280'),
-                    alignment=TA_CENTER,
-                    fontName='Helvetica'
-                )
-                
-                story.append(Paragraph("Generated by CodeDocGen", footer_style))
-                story.append(Spacer(1, 0.2*inch))
-                story.append(Paragraph("AI-Powered Documentation Generator", footer_style))
-                story.append(Spacer(1, 0.3*inch))
-                story.append(Paragraph(f"Document created: {current_time}", footer_style))
-                
-                # Build the professional PDF
-                doc.build(story)
-                
-            except ImportError as e:
-                print(f"ReportLab not available: {e}, falling back to HTML")
-                # Fallback to HTML if reportlab fails
-                html_content = converter.markdown_to_html(content)
-                template = DocumentExporter.get_html_template()
-                full_html = template.format(content=html_content, timestamp=current_time, toc="")
-                
-                temp_path = temp_path.replace('.pdf', '_printable.html')
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    f.write(full_html)
-            
-            except Exception as e:
-                print(f"PDF generation failed: {e}, falling back to HTML")
-                html_content = converter.markdown_to_html(content)
-                template = DocumentExporter.get_html_template()
-                full_html = template.format(content=html_content, timestamp=current_time, toc="")
-                
-                # Save as HTML with PDF-ready styling
-                temp_path = temp_path.replace('.pdf', '_printable.html')
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    f.write(full_html)
-                    
-        else:
-            # Default to markdown
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-        
-        return temp_path
-    
-    @staticmethod
-    def get_download_url(file_path: str) -> str:
-        """
-        Get the download URL for a temporary file
-        """
-        # Convert absolute path to relative URL for the download endpoint
-        if 'media' in file_path:
-            relative_path = file_path.split('media')[-1].replace('\\', '/').lstrip('/')
-            return f'/api/download/{relative_path}'
-        return file_path
-    
-    @staticmethod
-    def _format_inline_text(text):
-        """
-        Format inline markdown elements like bold, italic, code, and links
-        with improved error handling and character escaping
-        """
-        if not text:
-            return ""
-            
-        try:
-            # First, escape HTML special characters
-            text = text.replace('&', '&amp;')
-            text = text.replace('<', '&lt;').replace('>', '&gt;')
-            
-            # Process inline code blocks (with proper handling for special characters)
-            def code_replacer(match):
-                try:
-                    code_content = match.group(1)
-                    # Further escape any characters that might cause issues
-                    code_content = code_content.replace('"', '&quot;').replace("'", "&#39;")
-                    return f'<font name="Courier" color="#1f2937" backColor="#f3f4f6">{code_content}</font>'
-                except Exception:
-                    # If anything goes wrong, return the original match
-                    return f'`{match.group(1)}`'
-                
-            text = re.sub(r'`([^`]+)`', code_replacer, text)
-            
-            # Handle bold and italic with improved regex
-            text = re.sub(r'\*\*\*(.*?)\*\*\*', r'<b><i>\1</i></b>', text)  # Bold italic
-            text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)  # Bold
-            text = re.sub(r'\*(.*?)\*(?![*])', r'<i>\1</i>', text)  # Italic (avoiding partial bold matches)
-            
-            # Handle underline (sometimes used in markdown)
-            text = re.sub(r'__(.*?)__', r'<u>\1</u>', text)
-            
-            # Handle strikethrough
-            text = re.sub(r'~~(.*?)~~', r'<strike>\1</strike>', text)
-            
-            # Handle links with proper escaping
-            def link_replacer(match):
-                try:
-                    link_text = match.group(1)
-                    link_url = match.group(2)
-                    # Escape quotes in URLs
-                    link_url = link_url.replace('"', '&quot;')
-                    return f'<link href="{link_url}">{link_text}</link>'
-                except Exception:
-                    # If anything goes wrong, return the original text
-                    return f'[{match.group(1)}]({match.group(2)})'
-                
-            text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', link_replacer, text)
-            
-            # Restore our formatting tags
-            text = text.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
-            text = text.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
-            text = text.replace('&lt;u&gt;', '<u>').replace('&lt;/u&gt;', '</u>')
-            text = text.replace('&lt;strike&gt;', '<strike>').replace('&lt;/strike&gt;', '</strike>')
-            text = text.replace('&lt;font', '<font').replace('&lt;/font&gt;', '</font>')
-            text = text.replace('&lt;link', '<link').replace('&lt;/link&gt;', '</link>')
-            
-            return text
-            
-        except Exception as e:
-            # Ultimate fallback - if anything goes wrong, return plain escaped text
-            print(f"Warning: Formatter error in _format_inline_text: {e}")
-            return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    
-    @staticmethod
-    def _extract_headings(content):
-        """
-        Extract headings from markdown content for table of contents
-        with improved error handling and formatting
-        """
-        if not content:
-            return []
-            
-        headings = []
-        lines = content.split('\n')
-        
-        try:
-            for line in lines:
-                line = line.strip()
-                if line.startswith('#'):
-                    level = 0
-                    for char in line:
-                        if char == '#':
-                            level += 1
-                        else:
-                            break
-                    
-                    # Validate level (should be 1-6)
-                    if level < 1 or level > 6:
-                        continue
-                    
-                    heading_text = line[level:].strip()
-                    if heading_text:
-                        # Clean up any markdown formatting inside headings for TOC
-                        clean_heading = re.sub(r'[*_`]', '', heading_text)  # Remove *, _, and ` chars
-                        clean_heading = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_heading)  # Extract link text
+                        logger.error(f"DocumentationGenerator: Error in HTML export - {str(e)}")
+                        raise Exception(f"Failed to create HTML file: {str(e)}")
                         
-                        # Create a valid anchor
-                        anchor = heading_text.lower()
-                        anchor = re.sub(r'[^\w\s-]', '', anchor)  # Remove special chars
-                        anchor = re.sub(r'\s+', '-', anchor)      # Replace spaces with hyphens
+                elif export_format == 'md':
+                    try:
+                        # Markdown files don't need conversion, just save directly
+                        formatted_md = content
+                        with open(temp_path, 'w', encoding='utf-8') as f:
+                            f.write(formatted_md)
+                        return temp_path
+                    except Exception as e:
+                        logger.error(f"DocumentationGenerator: Error in Markdown export - {str(e)}")
+                        raise Exception(f"Failed to create Markdown file: {str(e)}")
                         
-                        headings.append({
-                            'level': level,
-                            'text': clean_heading,
-                            'anchor': anchor
-                        })
-        except Exception as e:
-            print(f"Warning: Error extracting headings: {e}")
-            # Return what we've collected so far
-        
-        return headings
-    
-    @staticmethod
-    def _generate_professional_rtf(content, timestamp):
-        """
-        Generate professional RTF content with proper formatting for Word
-        """
-        import re
-        
-        # RTF Header with professional styling
-        rtf_header = r"""{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033
-{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil\fcharset0 Consolas;}{\f2\fnil\fcharset0 Arial;}}
-{\colortbl ;\red0\green0\blue0;\red30\green64\blue175;\red255\green255\blue255;\red245\green245\blue245;\red128\green128\blue128;\red220\green20\blue60;\red34\green139\blue34;}
-{\*\generator CodeDocGen RTF Generator;}
-\viewkind4\uc1
-\pard\sa200\sl276\slmult1\qc\cf2\f2\fs36\b Code Documentation\b0\par
-\pard\sa200\sl276\slmult1\qc\cf5\f0\fs20 Generated on """ + timestamp + r"""\par
-\pard\sa200\sl276\slmult1\cf1\f0\fs22\line\line
-"""
-        
-        # Process content line by line
-        lines = content.split('\n')
-        rtf_body = ""
-        in_code_block = False
-        in_list = False
-        list_level = 0
-        
-        for line in lines:
-            line = line.rstrip()
-            
-            # Handle code blocks
-            if line.startswith('```'):
-                if in_code_block:
-                    # End code block
-                    rtf_body += r"\par}"
-                    in_code_block = False
-                else:
-                    # Start code block
-                    language = line[3:].strip() if len(line) > 3 else "code"
-                    if language:
-                        rtf_body += rf"\pard\sa100\sl240\slmult1\cf6\f0\fs18\b {language.upper()} Code:\b0\par"
-                    rtf_body += r"\pard\sa100\sl240\slmult1\cb4\cf1\f1\fs18{"
-                    in_code_block = True
-                continue
-            
-            if in_code_block:
-                # Code content - escape RTF special characters
-                escaped_line = line.replace('\\', '\\\\').replace('{', r'\{').replace('}', r'\}')
-                rtf_body += escaped_line + r"\par"
-                continue
-            
-            # Handle headers
-            if line.startswith('# '):
-                heading_text = line[2:].strip()
-                rtf_body += rf"\pard\sa300\sb200\sl360\slmult1\cf2\f2\fs32\b {heading_text}\b0\par"
-            elif line.startswith('## '):
-                heading_text = line[3:].strip()
-                rtf_body += rf"\pard\sa250\sb150\sl300\slmult1\cf2\f2\fs28\b {heading_text}\b0\par"
-            elif line.startswith('### '):
-                heading_text = line[4:].strip()
-                rtf_body += rf"\pard\sa200\sb100\sl276\slmult1\cf2\f0\fs24\b {heading_text}\b0\par"
-            elif line.startswith('#### '):
-                heading_text = line[5:].strip()
-                rtf_body += rf"\pard\sa150\sb80\sl276\slmult1\cf1\f0\fs22\b {heading_text}\b0\par"
-            
-            # Handle bullet lists
-            elif line.startswith('- ') or line.startswith('* ') or line.startswith('+ '):
-                if not in_list:
-                    in_list = True
-                item_text = line[2:].strip()
-                item_text = DocumentExporter._format_rtf_inline(item_text)
-                rtf_body += rf"\pard\fi-200\li400\sa100\sl276\slmult1\cf1\f0\fs22 \bullet  {item_text}\par"
-            
-            # Handle numbered lists
-            elif re.match(r'^\d+\. ', line):
-                if not in_list:
-                    in_list = True
-                    list_level = 1
-                item_text = re.sub(r'^\d+\. ', '', line).strip()
-                item_text = DocumentExporter._format_rtf_inline(item_text)
-                rtf_body += rf"\pard\fi-200\li400\sa100\sl276\slmult1\cf1\f0\fs22 {list_level}.  {item_text}\par"
-                list_level += 1
-            
-            # Handle blockquotes
-            elif line.startswith('>'):
-                quote_text = line[1:].strip()
-                quote_text = DocumentExporter._format_rtf_inline(quote_text)
-                rtf_body += rf"\pard\li400\ri200\sa100\sl276\slmult1\cb4\cf5\f0\fs20\i \ldblquote {quote_text}\rdblquote\i0\par"
-            
-            # Handle regular paragraphs
-            elif line.strip():
-                if in_list:
-                    rtf_body += r"\pard\sa200\sl276\slmult1"
-                    in_list = False
-                    list_level = 0
+                elif export_format == 'txt':
+                    try:
+                        return generator.export_to_txt(content, temp_path)
+                    except Exception as e:
+                        logger.error(f"DocumentationGenerator: Error in TXT export - {str(e)}")
+                        raise Exception(f"Failed to create TXT file: {str(e)}")
+                    # Write content directly
+                    with open(temp_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
                 
-                para_text = DocumentExporter._format_rtf_inline(line.strip())
-                rtf_body += rf"\pard\sa150\sl276\slmult1\cf1\f0\fs22 {para_text}\par"
-            
-            # Handle empty lines
-            else:
-                if in_list:
-                    in_list = False
-                    list_level = 0
-                rtf_body += r"\par"
-        
-        # Close any open code block
-        if in_code_block:
-            rtf_body += r"\par}"
-        
-        # RTF Footer
-        rtf_footer = r"""
-\pard\sa200\sl276\slmult1\line\line
-\pard\sa100\sl276\slmult1\qc\cf5\f0\fs18\i Generated by CodeDocGen - AI-Powered Documentation Generator\i0\par
-}"""
-        
-        return rtf_header + rtf_body + rtf_footer
-    
-    @staticmethod
-    def _format_rtf_inline(text):
-        """
-        Format inline markdown elements for RTF
-        """
-        import re
-        
-        # Handle inline code
-        text = re.sub(r'`([^`]+)`', r'\\cf6\\f1\\fs18 \1\\cf1\\f0\\fs22', text)
-        
-        # Handle bold text
-        text = re.sub(r'\*\*(.*?)\*\*', r'\\b \1\\b0', text)
-        
-        # Handle italic text
-        text = re.sub(r'\*(.*?)\*', r'\\i \1\\i0', text)
-        
-        # Handle links
-        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\\cf2\\ul \1\\ul0\\cf1', text)
-        
-        # Escape RTF special characters
-        text = text.replace('\\', '\\\\')
-        text = text.replace('{', r'\{')
-        text = text.replace('}', r'\}')
-        
-        return text
-    
+                return temp_path
+                
+            except ImportError as e:
+                raise ImportError(f"Failed to create {export_format.upper()} file: Required package not installed. Error: {str(e)}")
+            except Exception as e:
+                raise Exception(f"Failed to create {export_format.upper()} file: {str(e)}")
+        except Exception as e:
+            logger.error(f"DocumentationGenerator: Error in temp file creation - {str(e)}")
+            raise
