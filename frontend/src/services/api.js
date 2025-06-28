@@ -1,7 +1,10 @@
 // Enhanced API service for React frontend with Ollama integration
 // frontend/src/services/api.js
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import { useState } from 'react';
+
+// Get API base URL from Vite environment variables
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 class ApiService {
   constructor() {
