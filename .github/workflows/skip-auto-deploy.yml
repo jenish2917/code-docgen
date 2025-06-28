@@ -4,9 +4,9 @@ name: Manual Deployment Only
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   skip-auto-deploy:
