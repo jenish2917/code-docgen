@@ -13,7 +13,8 @@ from core.views import (
     DocumentationListView,
     DocumentationDetailView,
     StatsView,
-    DownloadFileView
+    DownloadFileView,
+    generate_doc
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -33,5 +34,6 @@ urlpatterns = [
     path('api/documentation/', DocumentationListView.as_view()),
     path('api/documentation/<int:doc_id>/', DocumentationDetailView.as_view()),
     path('api/stats/', StatsView.as_view()),
+    path('api/generate/', generate_doc),
     path('api/auth/', include('authentication.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
