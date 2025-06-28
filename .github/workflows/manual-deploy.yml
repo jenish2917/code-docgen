@@ -1,6 +1,5 @@
 # Manual deployment workflow for code-docgen
 # This workflow only runs on manual trigger to avoid automatic deployment issues
-
 name: Manual Azure Deployment
 
 on:

@@ -1,6 +1,5 @@
 # This file prevents automatic Azure Static Web Apps deployment
 # Only manual deployment should be used
-
 name: Manual Deployment Only
 
 on:
