@@ -1,0 +1,70 @@
+# Manual deployment workflow for code-docgen
+# This workflow only runs on manual trigger to avoid automatic deployment issues
+name: Manual Azure Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: 'Deploy Backend to Azure App Service'
+        required: false
+        default: false
+        type: boolean
+      deploy_frontend:
+        description: 'Deploy Frontend to Azure Static Web Apps'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy-backend:
+    if: ${{ github.event.inputs.deploy_backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_azure.txt
+      
+      - name: Deploy to Azure App Service
+        run: |
+          echo "Backend deployment would happen here"
+          echo "Use the deploy-backend-azure.ps1 script for actual deployment"
+
+  deploy-frontend:
+    if: ${{ github.event.inputs.deploy_frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install and build
+        run: |
+          cd frontend
+          npm install
+          npm run build
+      
+      - name: Deploy to Azure Static Web Apps
+        run: |
+          echo "Frontend deployment would happen here"
+          echo "Use Azure CLI or portal for actual deployment"
+
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Status
+        run: |
+          echo "✅ All automatic deployments are disabled"
+          echo "🚀 Use manual workflows or deployment scripts"
+          echo "📖 See AZURE_DEPLOYMENT_GUIDE.md for instructions"

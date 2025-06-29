@@ -66,6 +66,8 @@ import zipfile
 import shutil
 import traceback
 import logging
+import json
+import requests
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -78,7 +80,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse, FileResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 import logging
 import shutil
 
@@ -1043,3 +1046,120 @@ class DownloadFileView(APIView):
                 
         except Exception as e:
             return Response({'error': f'Error downloading file: {str(e)}'}, status=500)
+
+@csrf_exempt
+def generate_doc(request):
+    """
+    Generate documentation using Ollama API with configurable model
+    
+    This function provides an endpoint to interact with the Ollama API
+    for generating code documentation using configurable AI models.
+    Supports various models like qwen:0.5b, llama3, etc.
+    
+    Args:
+        request: Django HTTP request object with JSON payload
+        Expected payload: {
+            "prompt": "string",
+            "model": "string (optional)",
+            "max_tokens": "integer (optional)",
+            "temperature": "float (optional)"
+        }
+        
+    Returns:
+        JsonResponse: Response from Ollama API or error message
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            prompt = data.get('prompt', 'Explain this code.')
+            model = data.get('model', getattr(settings, 'OLLAMA_MODEL', 'qwen:0.5b'))
+            max_tokens = data.get('max_tokens', 1000)
+            temperature = data.get('temperature', 0.7)
+            
+            # Get Ollama API URL from settings
+            ollama_url = getattr(settings, 'OLLAMA_API_URL', 'http://20.2.84.243:11434/api/generate')
+            timeout = getattr(settings, 'OLLAMA_TIMEOUT', 30)
+            
+            # Enhanced payload with more options
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "num_predict": max_tokens,
+                    "temperature": temperature,
+                    "top_p": 0.9,
+                    "top_k": 40
+                }
+            }
+            
+            logger.info(f"Sending request to Ollama: {ollama_url} with model: {model}")
+            
+            response = requests.post(
+                ollama_url,
+                json=payload,
+                timeout=timeout,
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            response.raise_for_status()  # Raise an exception for bad status codes
+            result = response.json()
+            
+            logger.info(f"Ollama response received successfully")
+            
+            # Return enhanced response with metadata
+            return JsonResponse({
+                "status": "success",
+                "response": result.get("response", ""),
+                "model_used": model,
+                "total_duration": result.get("total_duration", 0),
+                "load_duration": result.get("load_duration", 0),
+                "prompt_eval_count": result.get("prompt_eval_count", 0),
+                "eval_count": result.get("eval_count", 0)
+            })
+
+        except requests.exceptions.Timeout:
+            logger.error("Ollama API request timed out")
+            return JsonResponse({
+                "status": "error",
+                "error": "Request timed out. The AI model might be busy.",
+                "error_type": "timeout"
+            }, status=408)
+            
+        except requests.exceptions.ConnectionError:
+            logger.error("Failed to connect to Ollama API")
+            return JsonResponse({
+                "status": "error", 
+                "error": "Unable to connect to AI service. Please try again later.",
+                "error_type": "connection"
+            }, status=503)
+            
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Ollama API HTTP error: {e}")
+            return JsonResponse({
+                "status": "error",
+                "error": f"AI service error: {e}",
+                "error_type": "api_error"
+            }, status=502)
+            
+        except json.JSONDecodeError:
+            logger.error("Invalid JSON in request body")
+            return JsonResponse({
+                "status": "error",
+                "error": "Invalid JSON format in request",
+                "error_type": "invalid_json"
+            }, status=400)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in generate_doc: {str(e)}")
+            return JsonResponse({
+                "status": "error",
+                "error": f"Unexpected error: {str(e)}",
+                "error_type": "unexpected"
+            }, status=500)
+            
+    return JsonResponse({
+        "status": "error",
+        "error": "Only POST method allowed",
+        "error_type": "method_not_allowed"
+    }, status=405)

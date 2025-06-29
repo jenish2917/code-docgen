@@ -1,0 +1,20 @@
+# This file prevents automatic Azure Static Web Apps deployment
+# Only manual deployment should be used
+name: Manual Deployment Only
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  skip-auto-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip Auto Deployment
+        run: |
+          echo "Automatic deployment skipped. Use manual deployment scripts instead."
+          echo "Frontend: Azure Static Web Apps"
+          echo "Backend: Azure App Service"
+          echo "See AZURE_DEPLOYMENT_GUIDE.md for manual deployment instructions"
